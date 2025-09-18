@@ -63,7 +63,7 @@ static int32_t __sf_fs_write_internal(const char *path,  const char *data, \
 
     if (!path || !data || len == 0) {
         LOG_ERROR("invalid argument");
-        return -1;
+        return -EINVAL;
     }
 
     flags = O_WRONLY | O_CREAT;
@@ -76,14 +76,14 @@ static int32_t __sf_fs_write_internal(const char *path,  const char *data, \
     fd = open(path, flags, 0644);
     if (fd < 0) {
         LOG_ERROR("open failed: %s", strerror(errno));
-        return -1;
+        return -EIO;
     }
 
     ret = write(fd, data, len);
     if (ret < 0) {
         LOG_ERROR("write failed: %s", strerror(errno));
         close(fd);
-        return -1;
+        return ret;
     }
 
     close(fd);
@@ -134,7 +134,7 @@ int32_t gf_fs_file_exists(const char *path)
 
     if (!path) {
         LOG_ERROR("invalid argument");
-        return 0;
+        return -EINVAL;
     }
 
     if (stat(path, &st) == 0) {
@@ -143,7 +143,7 @@ int32_t gf_fs_file_exists(const char *path)
     }
 
     LOG_DEBUG("file not found: %s", path);
-    return 0;
+    return -ENOENT;
 }
 
 int32_t find_device_path_by_name(const char *basepath, const char *fid, \
