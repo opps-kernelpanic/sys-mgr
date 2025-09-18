@@ -69,7 +69,10 @@ int32_t als_late_init(const char *sensor_name, char *dev_path, size_t path_len)
     }
 
     snprintf(f_path, sizeof(f_path), "%s/%s", dev_path, ALS_SAMPLE_TIME_CFG);
-    if (gf_fs_file_exists(f_path)) {
+    ret = gf_fs_file_exists(f_path);
+    if (ret < 0) {
+        return ret;
+    } else {
         snprintf(w_value, sizeof(w_value), "%f", 0.1);
         ret = gf_fs_write_file(f_path, w_value, sizeof(w_value));
         if (ret) {
@@ -96,7 +99,10 @@ int32_t als_read_illuminance(const char *dev_path)
     }
 
     snprintf(f_path, sizeof(f_path), "%s/%s", dev_path, ALS_VALUE);
-    if (gf_fs_file_exists(f_path)) {
+    ret = gf_fs_file_exists(f_path);
+    if (ret < 0) {
+        return ret;
+    } else {
         ret = gf_fs_read_file(f_path, r_buff, sizeof(r_buff), &read_len);
         if (ret) {
             LOG_ERROR("ALS read failed, ret %d", ret);
