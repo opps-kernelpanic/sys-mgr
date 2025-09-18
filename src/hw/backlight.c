@@ -59,7 +59,10 @@ int32_t backlight_setup()
     int32_t ret;
     char str[10];
 
-    if (gf_fs_file_exists(FS_BRIGHTNESS_POWER)) {
+    ret = gf_fs_file_exists(FS_BRIGHTNESS_POWER);
+    if (ret < 0) {
+        return ret;
+    } else {
         sprintf(str, "%d", 0);
         ret = gf_fs_write_file(FS_BRIGHTNESS_POWER, str, sizeof(str));
     }
@@ -128,4 +131,28 @@ int32_t brightness_ramp(uint8_t from, uint8_t to, uint32_t period_us)
     LOG_DEBUG("Brightness ramp done: from=%u to=%u period=%u us", \
               from, to, period_us);
     return 0;
+}
+
+int32_t get_brightness()
+{
+    char r_buff[10];
+    char f_path[128];
+    size_t read_len;
+    int ret;
+
+
+    ret = gf_fs_file_exists(FS_ACTUAL_BRIGHTNESS);
+    if (ret < 0) {
+        return ret;
+    } else {
+        ret = gf_fs_read_file(FS_ACTUAL_BRIGHTNESS, r_buff, sizeof(r_buff), &read_len);
+        if (ret) {
+            LOG_ERROR("Actual brightness read failed, ret %d", ret);
+        } else {
+            LOG_TRACE("Actual brightness value %d, ret %d", atoi(r_buff), ret);
+            // TODO: create work to sent brightness value back to UI
+        }
+    }
+
+    return ret;
 }

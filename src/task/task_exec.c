@@ -60,15 +60,16 @@ int32_t process_opcode(uint32_t opcode, void *data)
 
     switch (opcode) {
     case OP_BACKLIGHT_ON:
-        brightness_ramp(0, 100, 500000);
+        ret = brightness_ramp(0, 100, 500000);
         break;
     case OP_BACKLIGHT_OFF:
-        brightness_ramp(100, 0, 500000);
+        ret = brightness_ramp(100, 0, 500000);
         break;
     case OP_SET_BRIGHTNESS:
-        set_brightness( (*((remote_cmd_t *)data)).entries[1].value.i32);
+        ret = set_brightness( (*((remote_cmd_t *)data)).entries[1].value.i32);
         break;
     case OP_GET_BRIGHTNESS:
+        ret = get_brightness();
         break;
     case OP_LEFT_VIBRATOR:
         ret = rumble_trigger(2, 80, 150);
@@ -84,14 +85,14 @@ int32_t process_opcode(uint32_t opcode, void *data)
         LOG_DEBUG("roll=%.2f pitch=%.2f yaw=%.2f\n", a.roll, a.pitch, a.yaw);
         break;
     case OP_AUDIO_INIT:
-        snd_sys_init();
+        ret = snd_sys_init();
         break;
     case OP_AUDIO_RELEASE:
         snd_sys_release();
         break;
     case OP_SOUND_PLAY:
         // TODO: support sound file path
-        audio_play_sound("/usr/share/sounds/sound-icons/percussion-10.wav");
+        ret = audio_play_sound("/usr/share/sounds/sound-icons/percussion-10.wav");
         break;
 
     default:
