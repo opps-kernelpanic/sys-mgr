@@ -18,6 +18,8 @@
 #include <unistd.h>
 
 #include "comm/f_comm.h"
+#include "comm/cmd_payload.h"
+#include "sched/workqueue.h"
 #include "hw/common.h"
 
 /*********************
@@ -50,6 +52,28 @@
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+static int32_t get_brightness_resp(int32_t value)
+{
+    remote_cmd_t *cmd;
+    int32_t ret = 0;
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                                  OP_GET_BRIGHTNESS);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -EINVAL;
+    }
+
+    ret = remote_cmd_add_int(cmd, "brightness", value);
+    if (ret) {
+        delete_remote_cmd(cmd);
+        return -EIO;
+    }
+
+    // NOTE: Command data will be released after the work completes
+    ret = create_remote_task(WORK_PRIO_HIGH, cmd);
+    return ret;
+}
 
 /**********************
  *   GLOBAL FUNCTIONS
@@ -138,8 +162,8 @@ int32_t get_brightness()
     char r_buff[10];
     char f_path[128];
     size_t read_len;
+    int32_t brightness_val;
     int ret;
-
 
     ret = gf_fs_file_exists(FS_ACTUAL_BRIGHTNESS);
     if (ret < 0) {
@@ -149,8 +173,9 @@ int32_t get_brightness()
         if (ret) {
             LOG_ERROR("Actual brightness read failed, ret %d", ret);
         } else {
-            LOG_TRACE("Actual brightness value %d, ret %d", atoi(r_buff), ret);
-            // TODO: create work to sent brightness value back to UI
+            brightness_val = atoi(r_buff);
+            LOG_TRACE("Actual brightness value %d, ret %d", brightness_val, ret);
+            ret = get_brightness_resp(brightness_val);
         }
     }
 
