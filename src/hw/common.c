@@ -65,7 +65,7 @@ int32_t common_hw_init()
 
 int32_t common_hw_deinit()
 {
-    backlight_setup();
+    ;
 }
 
 /*
@@ -74,7 +74,7 @@ int32_t common_hw_deinit()
  * state. This loop must be initialized by System Manager right after
  * hardware initialization is completed at service start.
  */
-int32_t hw_monitor_loop()
+void *hw_monitor_loop()
 {
     LOG_INFO("Hardware monitor is running...");
     while (g_run) {
@@ -82,5 +82,5 @@ int32_t hw_monitor_loop()
     }
     LOG_INFO("Hardware monitor thread exiting...");
 
-    return 0;
+    return NULL;
 }

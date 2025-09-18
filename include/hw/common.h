@@ -46,7 +46,7 @@ int32_t als_read_illuminance(const char *dev_path);
 
 int32_t common_hw_init();
 int32_t common_hw_deinit();
-int32_t hw_monitor_loop();
+void *hw_monitor_loop();
 /**********************
  *      MACROS
  **********************/
