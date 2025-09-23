@@ -22,7 +22,7 @@
 
 #include "comm/dbus_comm.h"
 #include "sched/workqueue.h"
-#include "task.h"
+#include "main.h"
 
 /*********************
  *      DEFINES

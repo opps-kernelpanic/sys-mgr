@@ -1,10 +1,10 @@
 /**
- * @file task.h
+ * @file main.h
  *
  */
 
-#ifndef G_TASK_H
-#define G_TASK_H
+#ifndef G_MAIN_H
+#define G_MAIN_H
 /*********************
  *      INCLUDES
  *********************/
@@ -50,4 +50,4 @@ int32_t process_opcode(uint32_t opcode, void *data);
  *   STATIC FUNCTIONS
  **********************/
 
-#endif /* G_TASK_H */
+#endif /* G_MAIN_H */
