@@ -83,12 +83,12 @@ int32_t backlight_setup()
     int32_t ret;
     char str[10];
 
-    ret = gf_fs_file_exists(FS_BRIGHTNESS_POWER);
+    ret = fs_file_exists(FS_BRIGHTNESS_POWER);
     if (ret < 0) {
         return ret;
     } else {
         sprintf(str, "%d", 0);
-        ret = gf_fs_write_file(FS_BRIGHTNESS_POWER, str, sizeof(str));
+        ret = fs_write_file(FS_BRIGHTNESS_POWER, str, sizeof(str));
     }
 
     return ret;
@@ -106,7 +106,7 @@ int32_t set_brightness(uint8_t brightness)
 
     snprintf(str_percent, sizeof(str_percent), "%u", brightness);
 
-    ret = gf_fs_write_file(FS_BRIGHTNESS, str_percent, sizeof(str_percent));
+    ret = fs_write_file(FS_BRIGHTNESS, str_percent, sizeof(str_percent));
     if (ret < 0) {
         LOG_ERROR("Failed to set brightness to %u, err=%d (%s)", brightness, \
                   ret, strerror(errno));
@@ -165,11 +165,11 @@ int32_t get_brightness()
     int32_t brightness_val;
     int ret;
 
-    ret = gf_fs_file_exists(FS_ACTUAL_BRIGHTNESS);
+    ret = fs_file_exists(FS_ACTUAL_BRIGHTNESS);
     if (ret < 0) {
         return ret;
     } else {
-        ret = gf_fs_read_file(FS_ACTUAL_BRIGHTNESS, r_buff, sizeof(r_buff), &read_len);
+        ret = fs_read_file(FS_ACTUAL_BRIGHTNESS, r_buff, sizeof(r_buff), &read_len);
         if (ret) {
             LOG_ERROR("Actual brightness read failed, ret %d", ret);
         } else {

@@ -56,7 +56,7 @@
  *   GLOBAL FUNCTIONS
  **********************/
 
-static int32_t __sf_fs_write_internal(const char *path,  const char *data, \
+static int32_t __fs_write_internal(const char *path,  const char *data, \
                                   size_t len, int32_t append)
 {
     int32_t fd, ret, flags;
@@ -91,18 +91,18 @@ static int32_t __sf_fs_write_internal(const char *path,  const char *data, \
     return 0;
 }
 
-int32_t gf_fs_write_file(const char *path, const char *data, size_t len)
+int32_t fs_write_file(const char *path, const char *data, size_t len)
 {
-    return __sf_fs_write_internal(path, data, len, 0);
+    return __fs_write_internal(path, data, len, 0);
 }
 
-int32_t gf_fs_append_file(const char *path, const char *data, size_t len)
+int32_t fs_append_file(const char *path, const char *data, size_t len)
 {
-    return __sf_fs_write_internal(path, data, len, 1);
+    return __fs_write_internal(path, data, len, 1);
 }
 
-int gf_fs_read_file(const char *path, char *buf, size_t buf_len, \
-                    size_t *out_len)
+int32_t fs_read_file(const char *path, char *buf, size_t buf_len, \
+                     size_t *out_len)
 {
     int fd, ret;
     ssize_t size;
@@ -128,7 +128,7 @@ int gf_fs_read_file(const char *path, char *buf, size_t buf_len, \
     return 0;
 }
 
-int32_t gf_fs_file_exists(const char *path)
+int32_t fs_file_exists(const char *path)
 {
     struct stat st;
 
@@ -175,7 +175,7 @@ int32_t find_device_path_by_name(const char *basepath, const char *fid, \
         snprintf(name_path, sizeof(name_path), "%s/%s/%s", \
                  basepath, entry->d_name, fid);
 
-        ret = gf_fs_read_file(name_path, name_buf, sizeof(name_buf), \
+        ret = fs_read_file(name_path, name_buf, sizeof(name_buf), \
                               &read_len);
         if (ret < 0)
             continue;
