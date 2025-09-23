@@ -43,7 +43,6 @@
 /**********************
  *  STATIC VARIABLES
  **********************/
-static wq_ctx_t *wq_ctxs = NULL;
 
 /**********************
  *      MACROS
@@ -114,6 +113,7 @@ static int32_t create_workers(wq_ctx_t *ctx)
 static void rollback_workqueues(int32_t upto)
 {
     int32_t i, w;
+    wq_ctx_t *wq_ctxs = get_ctx()->wqs;
 
     for (i = 0; i < upto; i++) {
         for (w = 0; w < wq_ctxs[i].nr_workers; w++)
@@ -241,6 +241,8 @@ int32_t workqueue_active_count(workqueue_t *wq)
 
 workqueue_t *get_wq(int32_t index)
 {
+    wq_ctx_t *wq_ctxs = get_ctx()->wqs;
+
     if (index > NR_WORKQUEUE) {
         LOG_ERROR("Workqueue data is invalid");
         return NULL;
@@ -251,6 +253,8 @@ workqueue_t *get_wq(int32_t index)
 
 static inline void set_wq(workqueue_t *wq, int32_t index)
 {
+    wq_ctx_t *wq_ctxs = get_ctx()->wqs;
+
     if (wq == NULL) {
         LOG_ERROR("Workqueue data is invalid");
         return;
@@ -274,7 +278,7 @@ int32_t workqueue_init(void)
     LOG_INFO("Init %d workers per workqueue, total %d workqueues",
              WORKERS_PER_QUEUE, NR_WORKQUEUE);
 
-    wq_ctxs = ctx;
+    get_ctx()->wqs = ctx;
 
     for (i = 0; i < NR_WORKQUEUE; i++) {
         wq = workqueue_create();
@@ -310,6 +314,7 @@ int32_t workqueue_init(void)
 void workqueue_deinit(void)
 {
     int32_t i, w;
+    wq_ctx_t *wq_ctxs = get_ctx()->wqs;
 
     workqueue_handler_wakeup_all();
 
@@ -324,5 +329,5 @@ void workqueue_deinit(void)
     }
 
     free(wq_ctxs);
-    wq_ctxs = NULL;
+    get_ctx()->wqs = NULL;
 }
