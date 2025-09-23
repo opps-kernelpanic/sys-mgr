@@ -40,7 +40,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern int32_t event_fd;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -71,7 +70,7 @@ static void sig_handler(int32_t sig)
             exit(0);
         case SIGABRT:
             LOG_WARN("[+] Received SIGABRT. Exiting...");
-            event_set(event_fd, SIGABRT);
+            event_set(get_ctx()->comm.event, SIGABRT);
             break;
         default:
             LOG_WARN("[!] Received unidentified signal: %d", sig);
@@ -132,7 +131,7 @@ static int32_t service_startup_flow(void)
     }
 
     /* Prepare eventfd to notify epoll when communicating with threads */
-    ret = init_event_file();
+    ret = init_event_file(ctx);
     if (ret) {
         LOG_FATAL("Failed to initialize eventfd, ret=%d", ret);
         goto exit_err;
@@ -166,13 +165,13 @@ static int32_t service_startup_flow(void)
 
 /* Cleanup sequence in case of failure */
 exit_dbus:
-    event_set(event_fd, SIGUSR1);
+    event_set(get_ctx()->comm.event, SIGUSR1);
 
 exit_workqueue:
     workqueue_deinit();
 
 exit_event:
-    cleanup_event_file();
+    cleanup_event_file(ctx);
 
 exit_err:
     destroy_ctx();
@@ -189,6 +188,7 @@ static void service_shutdown_flow(void)
 {
     int32_t ret;
     int32_t cnt;
+    ctx_t *ctx = get_ctx();
 
 
     create_local_simple_task(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, OP_AUDIO_RELEASE);
@@ -204,11 +204,11 @@ static void service_shutdown_flow(void)
     /* Stop background threads and notify shutdown */
     get_ctx()->run = 0;                 /* Signal threads to stop */
 
-    event_set(event_fd, SIGINT);    /* Notify DBus/system about shutdown */
+    event_set(get_ctx()->comm.event, SIGINT);    /* Notify DBus/system about shutdown */
 
     workqueue_deinit();
 
-    cleanup_event_file();
+    cleanup_event_file(ctx);
 
     LOG_INFO("Service shutdown flow completed");
 }
