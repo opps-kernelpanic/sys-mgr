@@ -27,6 +27,7 @@
 #include "comm/net/network.h"
 #include "comm/cmd_payload.h"
 #include "sched/workqueue.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -50,6 +51,7 @@ static void service_shutdown_flow();
 /**********************
  *  STATIC VARIABLES
  **********************/
+static ctx_t *runtime_ctx = NULL;
 
 /**********************
  *      MACROS
@@ -97,6 +99,24 @@ static int32_t setup_signal_handler()
 
     return 0;
 }
+
+static int32_t create_ctx(void)
+{
+    runtime_ctx = (ctx_t *)calloc(1, sizeof(ctx_t));
+    if (runtime_ctx == NULL) {
+        return -ENOMEM;
+    }
+
+    return 0;
+}
+
+static void destroy_ctx(void)
+{
+    free(runtime_ctx);
+    runtime_ctx = NULL;
+}
+
+ctx_t *get_ctx();
 
 static int32_t service_startup_flow(void)
 {
@@ -199,12 +219,23 @@ static int32_t main_loop()
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+ctx_t *get_ctx()
+{
+    return runtime_ctx;
+}
+
 int32_t main(void)
 {
     pthread_t task_handler;
     int32_t ret = 0;
 
     LOG_INFO("|---------------------> SYSTEM MANAGER <----------------------|");
+    ret = create_ctx();
+    if (ret) {
+        LOG_FATAL("Unable to create application runtime context");
+        return ret;
+    }
+
     ret = setup_signal_handler();
     if (ret) {
         return ret;
@@ -221,6 +252,7 @@ int32_t main(void)
         return ret;
     }
 
+    destroy_ctx();
     LOG_INFO("|-------------> All services stopped. Safe exit <-------------|");
     return 0;
 }
