@@ -21,6 +21,7 @@
 
 #include "comm/f_comm.h"
 #include "hw/common.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -33,7 +34,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern volatile sig_atomic_t g_run;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -77,7 +77,7 @@ int32_t common_hw_deinit()
 void *hw_monitor_loop()
 {
     LOG_INFO("Hardware monitor is running...");
-    while (g_run) {
+    while (get_ctx()->run) {
         usleep(200000);
     }
     LOG_INFO("Hardware monitor thread exiting...");

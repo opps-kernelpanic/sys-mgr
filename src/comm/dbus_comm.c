@@ -28,6 +28,7 @@
 #include "comm/f_comm.h"
 #include "comm/cmd_payload.h"
 #include "sched/workqueue.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -41,7 +42,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern volatile sig_atomic_t g_run;
 extern int32_t event_fd;
 
 /**********************
@@ -429,7 +429,7 @@ static int32_t dbus_listener_loop(DBusConnection *conn)
     }
 
     LOG_INFO("System manager DBus communication is running...");
-    while (g_run) {
+    while (get_ctx()->run) {
         LOG_TRACE("[DBus]--> Waiting for next DBus message...");
         n_ready = epoll_wait(epoll_fd, events_detected, MAX_EVENTS, -1);
         if (n_ready == -1) {

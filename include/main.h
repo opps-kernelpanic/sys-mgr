@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <dbus/dbus.h>
 
 #include "sched/workqueue.h"
 
@@ -54,6 +55,7 @@ typedef struct ctx {
 /**********************
  *  GLOBAL PROTOTYPES
  **********************/
+ctx_t *get_ctx(void);
 int32_t process_opcode(uint32_t opcode, void *data);
 
 /**********************

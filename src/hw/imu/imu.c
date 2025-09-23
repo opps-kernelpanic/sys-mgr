@@ -27,6 +27,7 @@
 #include "hw/common.h"
 #include "hw/imu.h"
 #include "kalman.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -50,7 +51,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern volatile sig_atomic_t g_run;
 
 /**********************
  *  STATIC VARIABLES
@@ -418,7 +418,7 @@ static int32_t imu_fn_handler()
     clock_gettime(CLOCK_MONOTONIC, &t_prev);
     sleep_us = (int)(1000000.0f / (float)sample_hz);
 
-    while (imu_running && g_run) {
+    while (imu_running && get_ctx()->run) {
         /* read raw scaled (no unit conversion), then convert here */
         if (read_raw_scaled_no_unit_convert(&axs, &ays, &azs, &gxs, &gys, &gzs) != 0) {
             LOG_ERROR("read_raw_scaled_no_unit_convert failed");

@@ -41,7 +41,6 @@
  *  GLOBAL VARIABLES
  **********************/
 extern int32_t event_fd;
-volatile sig_atomic_t g_run = 1;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -116,12 +115,21 @@ static void destroy_ctx(void)
     runtime_ctx = NULL;
 }
 
-ctx_t *get_ctx();
+ctx_t *get_ctx(void);
 
 static int32_t service_startup_flow(void)
 {
     int32_t ret;
     pthread_t dbus_handler;
+    ctx_t *ctx;
+
+    ctx = get_ctx();
+    if (!ctx) {
+        exit(-EIO);
+    } else {
+        ctx->run = 1;
+        ctx->comm.event = -1;
+    }
 
     /* Prepare eventfd to notify epoll when communicating with threads */
     ret = init_event_file();
@@ -167,6 +175,7 @@ exit_event:
     cleanup_event_file();
 
 exit_err:
+    destroy_ctx();
     return ret;
 }
 
@@ -193,7 +202,7 @@ static void service_shutdown_flow(void)
     }
 
     /* Stop background threads and notify shutdown */
-    g_run = 0;                      /* Signal threads to stop */
+    get_ctx()->run = 0;                 /* Signal threads to stop */
 
     event_set(event_fd, SIGINT);    /* Notify DBus/system about shutdown */
 
@@ -208,7 +217,7 @@ static void service_shutdown_flow(void)
 static int32_t main_loop()
 {
     LOG_INFO("System manager service is running...");
-    while (g_run) {
+    while (get_ctx()->run) {
         usleep(200000);
     };
 
@@ -219,7 +228,7 @@ static int32_t main_loop()
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
-ctx_t *get_ctx()
+ctx_t *get_ctx(void)
 {
     return runtime_ctx;
 }

@@ -35,7 +35,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern volatile sig_atomic_t g_run;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -72,7 +71,7 @@ void *workqueue_handler(void* arg)
     LOG_INFO("Workqueue handler started - thread ID: %lu", (unsigned long)tid);
 
     // LOG_INFO("Task handler is running...");
-    while (g_run) {
+    while (get_ctx()->run) {
         // remove sleep to handle parallel tasks faster after request
         // usleep(200000);
         LOG_TRACE("Workqueue handler ID [%lu] --> waiting for new task...", \

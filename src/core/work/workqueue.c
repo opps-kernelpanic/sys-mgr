@@ -22,6 +22,7 @@
 
 #include "comm/dbus_comm.h"
 #include "sched/workqueue.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -34,7 +35,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern volatile sig_atomic_t g_run;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -172,7 +172,7 @@ work_t *pop_work_wait_safe(workqueue_t *wq)
     } 
 
     pthread_mutex_lock(&wq->mutex);
-    while (list_empty(&wq->list) && g_run)
+    while (list_empty(&wq->list) && get_ctx()->run)
         pthread_cond_wait(&wq->cond, &wq->mutex);
 
     if (list_empty(&wq->list)) {
