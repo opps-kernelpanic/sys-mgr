@@ -54,16 +54,28 @@
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
-int32_t common_hw_init()
+int32_t hw_monitor_init()
 {
+    pthread_t hw_state_handler;
+    int32_t ret;
+
     backlight_setup();
 
     char dev_path[MAX_PATH_LEN];
     als_late_init(ALS_SENSOR_NAME, dev_path, sizeof(dev_path));
     als_read_illuminance(dev_path);
+
+    /* Create hardware monitor thread */
+    ret = pthread_create(&hw_state_handler, NULL, hw_monitor_loop, NULL);
+    if (ret) {
+        LOG_FATAL("Failed to create hardware monitor thread: %s", strerror(ret));
+        return -ENOMEM;
+    }
+
+    return 0;
 }
 
-int32_t common_hw_deinit()
+void hw_monitor_deinit()
 {
     ;
 }

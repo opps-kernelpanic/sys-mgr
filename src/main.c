@@ -150,11 +150,16 @@ static int32_t service_startup_flow(void)
         goto exit_workqueue;
     }
 
+    ret = hw_monitor_init();
+    if (ret) {
+        LOG_FATAL("Failed to create hardware monitor thread: %s", strerror(ret));
+        goto exit_dbus;
+    }
 
     ret = network_manager_comm_init();
     if (ret) {
         LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
-        goto exit_dbus;
+        goto exit_hw_mon;
     }
 
 
@@ -164,6 +169,10 @@ static int32_t service_startup_flow(void)
     return 0;
 
 /* Cleanup sequence in case of failure */
+
+exit_hw_mon:
+    hw_monitor_deinit();
+
 exit_dbus:
     event_set(get_ctx()->comm.event, SIGUSR1);
 
@@ -201,10 +210,13 @@ static void service_shutdown_flow(void)
         cnt = workqueue_active_count(get_wq(SYSTEM_WQ));
     }
 
-    /* Stop background threads and notify shutdown */
-    get_ctx()->run = 0;                 /* Signal threads to stop */
+    hw_monitor_deinit();
 
-    event_set(get_ctx()->comm.event, SIGINT);    /* Notify DBus/system about shutdown */
+    /* Stop background threads and notify shutdown */
+    get_ctx()->run = 0;
+
+    /* Notify DBus/system about shutdown */
+    event_set(get_ctx()->comm.event, SIGINT);
 
     workqueue_deinit();
 
