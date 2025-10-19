@@ -69,7 +69,7 @@ int32_t process_opcode(uint32_t opcode, void *data)
         ret = brightness_ramp(100, 0, 500000);
         break;
     case OP_SET_BRIGHTNESS:
-        ret = set_brightness( (*((remote_cmd_t *)data)).entries[1].value.i32);
+        ret = set_brightness( (*((remote_cmd_t *)data)).entries[0].value.i32);
         break;
     case OP_GET_BRIGHTNESS:
         ret = get_brightness();
