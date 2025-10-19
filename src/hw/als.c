@@ -118,37 +118,41 @@ int32_t als_read_illuminance(const char *dev_path, int32_t *out_val)
 int32_t auto_brightness_handler(const char *dev_path)
 {
     int32_t ret;
-    int32_t light_value = 0;
-    int32_t lux_min = 0, pct_min = 1;
-    int32_t lux_max = 1000, pct_max = 100;
-    int32_t set_pct, actual_brightness;
+    int32_t lux_value = 0;
+    int32_t pct_min = 1, pct_max = 100;
+    int32_t lux_max = 500;
+    int32_t brightness_pct, actual_brightness;
 
-    ret = als_read_illuminance(dev_path, &light_value);
+    ret = als_read_illuminance(dev_path, &lux_value);
     if (ret)
         return ret;
 
     /* Map illuminance (lux) to brightness percent */
-    set_pct = (light_value * pct_max) / lux_max;
-    if (set_pct < pct_min)
-        set_pct = pct_min;
-    else if (set_pct > pct_max)
-        set_pct = pct_max;
+    brightness_pct = (lux_value * pct_max) / lux_max;
+
+    if (brightness_pct < pct_min)
+        brightness_pct = pct_min;
+    else if (brightness_pct > pct_max)
+        brightness_pct = pct_max;
 
     LOG_TRACE("ALS report %d lux -> target %d%% brightness", \
-              light_value, set_pct);
+              lux_value, brightness_pct);
 
     ret = get_brightness(&actual_brightness);
     if (ret)
         return ret;
 
+    if (brightness_pct == actual_brightness)
+        return 0;
+
     /* Smooth transition to new brightness level (200ms ramp) */
-    ret = brightness_ramp(actual_brightness, set_pct, 200000);
+    ret = brightness_ramp(actual_brightness, brightness_pct, 200000);
     if (ret)
         return ret;
 
     ret = get_and_res_actual_brightness();
     if (ret) {
-        LOG_WARN("Update brightness ui failed");
+        LOG_WARN("Update brightness ui failed, ret %d", ret);
     }
 
     return 0;
