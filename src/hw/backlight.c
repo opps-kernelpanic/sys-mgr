@@ -52,7 +52,7 @@
 /**********************
  *   STATIC FUNCTIONS
  **********************/
-static int32_t get_brightness_resp(int32_t value)
+static int32_t res_actual_brightness_value(int32_t value)
 {
     remote_cmd_t *cmd;
     int32_t ret = 0;
@@ -157,12 +157,10 @@ int32_t brightness_ramp(uint8_t from, uint8_t to, uint32_t period_us)
     return 0;
 }
 
-int32_t get_brightness()
+int32_t get_brightness(int32_t *out_val)
 {
     char r_buff[10];
-    char f_path[128];
     size_t read_len;
-    int32_t brightness_val;
     int ret;
 
     ret = fs_file_exists(FS_ACTUAL_BRIGHTNESS);
@@ -173,11 +171,26 @@ int32_t get_brightness()
         if (ret) {
             LOG_ERROR("Actual brightness read failed, ret %d", ret);
         } else {
-            brightness_val = atoi(r_buff);
-            LOG_TRACE("Actual brightness value %d, ret %d", brightness_val, ret);
-            ret = get_brightness_resp(brightness_val);
+            *out_val = atoi(r_buff);
         }
     }
 
     return ret;
 }
+
+int32_t get_and_res_actual_brightness()
+{
+    int32_t brightness_val;
+    int ret;
+
+    ret = get_brightness(&brightness_val);
+    if (ret < 0) {
+        return ret;
+    } else {
+        LOG_TRACE("Actual brightness value %d, ret %d", brightness_val, ret);
+        ret = res_actual_brightness_value(brightness_val);
+    }
+
+    return ret;
+}
+

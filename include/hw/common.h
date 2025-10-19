@@ -42,7 +42,8 @@ int32_t rumble_trigger(uint32_t event_id, uint32_t ff_type, uint32_t duration);
  * Other functions
  *====================*/
 int32_t als_late_init(const char *sensor_name, char *dev_path, size_t path_len);
-int32_t als_read_illuminance(const char *dev_path);
+int32_t als_read_illuminance(const char *dev_path, int32_t *out_val);
+int32_t auto_brightness_handler(const char *dev_path);
 
 int32_t hw_monitor_init();
 void hw_monitor_deinit();

@@ -61,9 +61,6 @@ int32_t hw_monitor_init()
 
     backlight_setup();
 
-    char dev_path[MAX_PATH_LEN];
-    als_late_init(ALS_SENSOR_NAME, dev_path, sizeof(dev_path));
-    als_read_illuminance(dev_path);
 
     /* Create hardware monitor thread */
     ret = pthread_create(&hw_state_handler, NULL, hw_monitor_loop, NULL);
@@ -88,9 +85,14 @@ void hw_monitor_deinit()
  */
 void *hw_monitor_loop()
 {
+    char dev_path[MAX_PATH_LEN];
+    als_late_init(ALS_SENSOR_NAME, dev_path, sizeof(dev_path));
+
     LOG_INFO("Hardware monitor is running...");
     while (get_ctx()->run) {
-        usleep(200000);
+        // TODO: create work
+        auto_brightness_handler(dev_path);
+        usleep(500000);
     }
     LOG_INFO("Hardware monitor thread exiting...");
 
