@@ -33,7 +33,7 @@ typedef struct comm_handler {
 
 typedef struct conf_data {
     int8_t brightness;
-    int8_t als_en;
+    bool als_en;
 } conf_t;
 
 typedef struct ctx {

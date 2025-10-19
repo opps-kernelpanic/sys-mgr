@@ -62,6 +62,12 @@ int32_t process_opcode(uint32_t opcode, void *data)
     case OP_DBUS_SENT_CMD:
         ret = dbus_method_call_with_data((remote_cmd_t *)data);
         break;
+    case OP_ALS_ON:
+        get_ctx()->cfg.als_en = true;
+        break;
+    case OP_ALS_OFF:
+        get_ctx()->cfg.als_en = false;
+        break;
     case OP_BACKLIGHT_ON:
         ret = brightness_ramp(0, 100, 500000);
         break;

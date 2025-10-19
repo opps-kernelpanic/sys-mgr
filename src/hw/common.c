@@ -91,7 +91,9 @@ void *hw_monitor_loop()
     LOG_INFO("Hardware monitor is running...");
     while (get_ctx()->run) {
         // TODO: create work
-        auto_brightness_handler(dev_path);
+        if (get_ctx()->cfg.als_en == true) {
+            auto_brightness_handler(dev_path);
+        }
         usleep(500000);
     }
     LOG_INFO("Hardware monitor thread exiting...");

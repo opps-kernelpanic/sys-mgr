@@ -45,6 +45,8 @@ typedef enum {
     /* HARDWARE */
     OP_START_HW_MON,
     /* Brightness API */
+    OP_ALS_ON,
+    OP_ALS_OFF,
     OP_BACKLIGHT_ON,
     OP_BACKLIGHT_OFF,
     OP_GET_BRIGHTNESS,
