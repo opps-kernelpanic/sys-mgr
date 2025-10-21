@@ -55,9 +55,10 @@ typedef enum {
     OP_LEFT_VIBRATOR,
     OP_RIGHT_VIBRATOR,
     /* IMU API */
-    OP_START_IMU,
-    OP_STOP_IMU,
+    OP_ENABLE_IMU,
+    OP_DISABLE_IMU,
     OP_READ_IMU,
+    OP_READ_ANGLE,
     /* AUDIO API */
     OP_AUDIO_INIT,
     OP_AUDIO_RELEASE,

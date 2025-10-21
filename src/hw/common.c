@@ -6,7 +6,7 @@
 /*********************
  *      INCLUDES
  *********************/
-// #define LOG_LEVEL LOG_LEVEL_TRACE
+#define LOG_LEVEL LOG_LEVEL_TRACE
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
@@ -21,6 +21,7 @@
 
 #include "comm/f_comm.h"
 #include "hw/common.h"
+#include "hw/imu.h"
 #include "main.h"
 
 /*********************
@@ -93,6 +94,11 @@ void *hw_monitor_loop()
         // TODO: create work
         if (get_ctx()->cfg.als_en == true) {
             auto_brightness_handler(dev_path);
+        }
+        if (get_ctx()->cfg.imu_en == true) {
+            struct imu_angles a = imu_get_angles();
+            LOG_TRACE("roll=%.2f pitch=%.2f yaw=%.2f\n", a.roll, a.pitch, a.yaw);
+
         }
         usleep(500000);
     }

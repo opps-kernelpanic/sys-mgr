@@ -66,7 +66,7 @@ static struct kalman k_roll, k_pitch;
 static float yaw_integral = 0.0f; /* degrees */
 
 /* thread + sync */
-static int32_t imu_running = 0;
+// static int32_t imu_running = 0;
 static pthread_mutex_t angles_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct imu_angles shared_angles = {0.0f, 0.0f, 0.0f};
 
@@ -293,7 +293,7 @@ int32_t imu_kalman_calibrate(void)
     double mag_sum = 0.0;
     float axs, ays, azs, gxs, gys, gzs;
 
-    if (imu_running) {
+    if (get_ctx()->cfg.imu_en) {
         LOG_WARN("calibrate: cannot calibrate while running");
         return -1;
     }
@@ -418,7 +418,7 @@ static int32_t imu_fn_handler()
     clock_gettime(CLOCK_MONOTONIC, &t_prev);
     sleep_us = (int)(1000000.0f / (float)sample_hz);
 
-    while (imu_running && get_ctx()->run) {
+    while (get_ctx()->cfg.imu_en && get_ctx()->run) {
         /* read raw scaled (no unit conversion), then convert here */
         if (read_raw_scaled_no_unit_convert(&axs, &ays, &azs, &gxs, &gys, &gzs) != 0) {
             LOG_ERROR("read_raw_scaled_no_unit_convert failed");
@@ -577,52 +577,54 @@ int32_t imu_kalman_init(const char *path, int32_t hz, float q_angle, float q_bia
 
     return 0;
 }
-int32_t imu_fn_thread_handler()
+int32_t enable_imu_fn()
 {
     int32_t ret;
     char dev_path[MAX_PATH_LEN];
+    pthread_t imu_state_handler;
+
+    if (get_ctx()->cfg.imu_en) {
+        LOG_WARN("imu already running");
+        return 0;
+    }
 
     ret = iio_dev_get_path_by_name(IMU_SENSOR_NAME, dev_path, sizeof(dev_path));
     if (ret) {
         return ret;
     }
 
+    // TODO: load exist configuration
     ret = imu_kalman_init(dev_path, 100, 0.001f, 0.003f, 0.03f);
     if (ret) {
         LOG_ERROR("IMU init task has failed (%d)", ret);
     }
 
-    if (imu_running) {
-        LOG_WARN("imu already running");
-        return 0;
-    }
 
-    imu_running = 1;
-    ret = imu_fn_handler();
+    get_ctx()->cfg.imu_en = true;
+
+    ret = pthread_create(&imu_state_handler, NULL, imu_fn_handler, NULL);
     if (ret) {
-        LOG_ERROR("IMU background task has failed (%d)", ret);
-        imu_running = 0;
-        return ret;
-    } else {
-        LOG_INFO("IMU handler is exited");
+        LOG_FATAL("Failed to create IMU monitor thread: %s", strerror(ret));
+        get_ctx()->cfg.imu_en = false;
+        return -ENOMEM;
     }
 
     return ret;
 }
 
-void imu_fn_thread_stop(void)
+void disable_imu_fn(void)
 {
-    if (!imu_running) {
-        LOG_WARN("imu not running");
+    if (!get_ctx()->cfg.imu_en) {
+        LOG_WARN("imu not enable");
         return;
     }
 
-    imu_running = 0;
+    get_ctx()->cfg.imu_en = false;
 }
 
-int32_t imu_kalman_is_running(void)
+bool is_imu_enabled(void)
 {
-    return imu_running;
+    return get_ctx()->cfg.imu_en;
 }
 
 void imu_kalman_reset_yaw(float yaw_deg)

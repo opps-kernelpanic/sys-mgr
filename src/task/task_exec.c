@@ -86,10 +86,13 @@ int32_t process_opcode(uint32_t opcode, void *data)
     case OP_RIGHT_VIBRATOR:
         ret = rumble_trigger(3, 80, 150);
         break;
-    case OP_STOP_IMU:
-        imu_fn_thread_stop();
+    case OP_ENABLE_IMU:
+        ret = enable_imu_fn();
         break;
-    case OP_READ_IMU:
+    case OP_DISABLE_IMU:
+        disable_imu_fn();
+        break;
+    case OP_READ_ANGLE:
         struct imu_angles a = imu_get_angles();
         LOG_DEBUG("roll=%.2f pitch=%.2f yaw=%.2f\n", a.roll, a.pitch, a.yaw);
         break;
