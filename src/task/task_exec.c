@@ -92,10 +92,6 @@ int32_t process_opcode(uint32_t opcode, void *data)
     case OP_DISABLE_IMU:
         disable_imu_fn();
         break;
-    case OP_READ_ANGLE:
-        struct imu_angles a = imu_get_angles();
-        LOG_DEBUG("roll=%.2f pitch=%.2f yaw=%.2f\n", a.roll, a.pitch, a.yaw);
-        break;
     case OP_AUDIO_INIT:
         ret = snd_sys_init();
         break;

@@ -96,8 +96,7 @@ void *hw_monitor_loop()
             auto_brightness_handler(dev_path);
         }
         if (get_ctx()->cfg.imu_en == true) {
-            struct imu_angles a = imu_get_angles();
-            LOG_TRACE("roll=%.2f pitch=%.2f yaw=%.2f\n", a.roll, a.pitch, a.yaw);
+            update_system_rotation_from_imu();
 
         }
         usleep(500000);

@@ -83,6 +83,8 @@ int32_t imu_kalman_read_raw(float *ax, float *ay, float *az,
 
 int32_t enable_imu_fn();
 void disable_imu_fn(void);
+
+int32_t update_system_rotation_from_imu(void);
 /**********************
  *      MACROS
  **********************/

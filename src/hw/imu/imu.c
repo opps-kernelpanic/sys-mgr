@@ -28,6 +28,8 @@
 #include "hw/imu.h"
 #include "kalman.h"
 #include "main.h"
+#include "comm/cmd_payload.h"
+#include "sched/workqueue.h"
 
 /*********************
  *      DEFINES
@@ -656,4 +658,56 @@ void imu_kalman_set_tuning(float q_angle, float q_bias, float r_measure)
 
     LOG_INFO("imu_kalman_set_tuning q_angle=%.6f q_bias=%.6f r_measure=%.6f",
          k_roll.q_angle, k_roll.q_bias, k_roll.r_measure);
+}
+
+int32_t send_screen_rotation_cmd(int32_t angle)
+{
+    remote_cmd_t *cmd;
+    int32_t ret;
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                                  OP_ROTATE_SCR);
+    if (!cmd) {
+        LOG_ERROR("Create rotation command failed");
+        return -EINVAL;
+    }
+
+    ret = remote_cmd_add_int(cmd, "angle", angle);
+    if (ret) {
+        delete_remote_cmd(cmd);
+        LOG_ERROR("Add rotation angle failed, ret %d", ret);
+        return -EIO;
+    }
+
+    /* Command data will be released after task completion */
+    return create_remote_task(WORK_PRIO_HIGH, cmd);
+}
+
+int32_t update_system_rotation_from_imu(void)
+{
+    static int32_t prev_angle;
+    int32_t angle = -1;
+    struct imu_angles imu = imu_get_angles();
+    int32_t ret = 0;
+
+    LOG_TRACE("roll=%.2f pitch=%.2f yaw=%.2f", \
+              imu.roll, imu.pitch, imu.yaw);
+
+    if (imu.roll <= -45.0f)
+        angle = 270;
+    else if (imu.roll >= 45.0f)
+        angle = 90;
+
+    if (imu.pitch <= -45.0f)
+        angle = 180;
+    else if (imu.pitch >= 45.0f)
+        angle = 0;
+
+    if (angle != -1 && angle != prev_angle) {
+        prev_angle = angle;
+        ret = send_screen_rotation_cmd(angle);
+        LOG_INFO("System rotation updated: %d°, ret %d", angle, ret);
+    }
+
+    return ret;
 }
