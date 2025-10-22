@@ -96,7 +96,7 @@ void *hw_monitor_loop()
             auto_brightness_handler(dev_path);
         }
         if (get_ctx()->cfg.imu_en == true) {
-            update_system_rotation_from_imu();
+            update_imu_state();
 
         }
         usleep(500000);

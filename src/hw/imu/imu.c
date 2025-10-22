@@ -660,54 +660,43 @@ void imu_kalman_set_tuning(float q_angle, float q_bias, float r_measure)
          k_roll.q_angle, k_roll.q_bias, k_roll.r_measure);
 }
 
-int32_t send_screen_rotation_cmd(int32_t angle)
+int32_t update_imu_state(void)
 {
+    struct imu_angles imu;
     remote_cmd_t *cmd;
-    int32_t ret;
-
-    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
-                                  OP_ROTATE_SCR);
-    if (!cmd) {
-        LOG_ERROR("Create rotation command failed");
-        return -EINVAL;
-    }
-
-    ret = remote_cmd_add_int(cmd, "angle", angle);
-    if (ret) {
-        delete_remote_cmd(cmd);
-        LOG_ERROR("Add rotation angle failed, ret %d", ret);
-        return -EIO;
-    }
-
-    /* Command data will be released after task completion */
-    return create_remote_task(WORK_PRIO_HIGH, cmd);
-}
-
-int32_t update_system_rotation_from_imu(void)
-{
-    static int32_t prev_angle;
-    int32_t angle = -1;
-    struct imu_angles imu = imu_get_angles();
     int32_t ret = 0;
 
-    LOG_TRACE("roll=%.2f pitch=%.2f yaw=%.2f", \
+    /* Read IMU sensor data */
+    imu = imu_get_angles();
+    LOG_TRACE("IMU roll=%.2f pitch=%.2f yaw=%.2f", \
               imu.roll, imu.pitch, imu.yaw);
 
-    if (imu.roll <= -45.0f)
-        angle = 270;
-    else if (imu.roll >= 45.0f)
-        angle = 90;
+    /* Create remote command payload */
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                                  OP_IMU_STATE);
+    if (!cmd)
+        return -ENOMEM;
 
-    if (imu.pitch <= -45.0f)
-        angle = 180;
-    else if (imu.pitch >= 45.0f)
-        angle = 0;
+#define ADD_CMD_INT(_key, _val, _err) \
+    do { \
+        ret = remote_cmd_add_int(cmd, _key, _val); \
+        if (ret) { \
+            LOG_ERROR("Add %s failed, ret %d", _err, ret); \
+            goto err_out; \
+        } \
+    } while (0)
 
-    if (angle != -1 && angle != prev_angle) {
-        prev_angle = angle;
-        ret = send_screen_rotation_cmd(angle);
-        LOG_INFO("System rotation updated: %d°, ret %d", angle, ret);
-    }
+    ADD_CMD_INT("enable", get_ctx()->cfg.imu_en ? 1 : 0, "enable flag");
+    ADD_CMD_INT("roll",   (int32_t)imu.roll, "roll angle");
+    ADD_CMD_INT("pitch",  (int32_t)imu.pitch, "pitch angle");
+    ADD_CMD_INT("yaw",    (int32_t)imu.yaw, "yaw angle");
 
-    return ret;
+#undef ADD_CMD_INT
+
+    /* Command will be released after work completion */
+    return create_remote_task(WORK_PRIO_HIGH, cmd);
+
+err_out:
+    delete_remote_cmd(cmd);
+    return -EIO;
 }

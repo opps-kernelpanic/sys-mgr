@@ -57,8 +57,7 @@ typedef enum {
     /* IMU API */
     OP_ENABLE_IMU,
     OP_DISABLE_IMU,
-    OP_READ_ANGLE,
-    OP_ROTATE_SCR,
+    OP_IMU_STATE,
     /* AUDIO API */
     OP_AUDIO_INIT,
     OP_AUDIO_RELEASE,
