@@ -92,6 +92,9 @@ int32_t process_opcode(uint32_t opcode, void *data)
     case OP_DISABLE_IMU:
         disable_imu_fn();
         break;
+    case OP_IMU_STATE:
+        update_imu_state();
+        break;
     case OP_AUDIO_INIT:
         ret = snd_sys_init();
         break;
