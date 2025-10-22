@@ -62,23 +62,23 @@ int32_t process_opcode(uint32_t opcode, void *data)
     case OP_DBUS_SENT_CMD:
         ret = dbus_method_call_with_data((remote_cmd_t *)data);
         break;
-    case OP_ALS_ON:
+    case OP_ENA_ALS:
         get_ctx()->cfg.als_en = true;
         break;
-    case OP_ALS_OFF:
+    case OP_DIS_ALS:
         get_ctx()->cfg.als_en = false;
         break;
-    case OP_BACKLIGHT_ON:
-        ret = brightness_ramp(0, 100, 500000);
+    case OP_ENA_BACKLIGHT:
+        ret = enable_backlight();
         break;
-    case OP_BACKLIGHT_OFF:
-        ret = brightness_ramp(100, 0, 500000);
+    case OP_DIS_BACKLIGHT:
+        ret = disable_backlight();
         break;
-    case OP_SET_BRIGHTNESS:
+    case OP_ADJUST_BRIGHTNESS:
         ret = set_brightness( (*((remote_cmd_t *)data)).entries[0].value.i32);
         break;
-    case OP_GET_BRIGHTNESS:
-        ret = get_and_res_actual_brightness();
+    case OP_BACKLIGHT_STATE:
+        ret = report_backlight_state();
         break;
     case OP_LEFT_VIBRATOR:
         ret = rumble_trigger(2, 80, 150);

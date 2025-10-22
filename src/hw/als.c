@@ -150,9 +150,9 @@ int32_t auto_brightness_handler(const char *dev_path)
     if (ret)
         return ret;
 
-    ret = get_and_res_actual_brightness();
+    ret = report_backlight_state();
     if (ret) {
-        LOG_WARN("Update brightness ui failed, ret %d", ret);
+        LOG_WARN("Report backlight state to UI failed, ret %d", ret);
     }
 
     return 0;

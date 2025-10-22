@@ -45,12 +45,12 @@ typedef enum {
     /* HARDWARE */
     OP_START_HW_MON,
     /* Brightness API */
-    OP_ALS_ON,
-    OP_ALS_OFF,
-    OP_BACKLIGHT_ON,
-    OP_BACKLIGHT_OFF,
-    OP_GET_BRIGHTNESS,
-    OP_SET_BRIGHTNESS,
+    OP_ENA_ALS,
+    OP_DIS_ALS,
+    OP_ENA_BACKLIGHT,
+    OP_DIS_BACKLIGHT,
+    OP_BACKLIGHT_STATE,
+    OP_ADJUST_BRIGHTNESS,
     /* Vibrator API */
     OP_LEFT_VIBRATOR,
     OP_RIGHT_VIBRATOR,

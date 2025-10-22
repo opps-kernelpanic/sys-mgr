@@ -52,28 +52,6 @@
 /**********************
  *   STATIC FUNCTIONS
  **********************/
-static int32_t res_actual_brightness_value(int32_t value)
-{
-    remote_cmd_t *cmd;
-    int32_t ret = 0;
-
-    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
-                                  OP_GET_BRIGHTNESS);
-    if (!cmd) {
-        LOG_ERROR("Failed to create remote command payload");
-        return -EINVAL;
-    }
-
-    ret = remote_cmd_add_int(cmd, "brightness", value);
-    if (ret) {
-        delete_remote_cmd(cmd);
-        return -EIO;
-    }
-
-    // NOTE: Command data will be released after the work completes
-    ret = create_remote_task(WORK_PRIO_HIGH, cmd);
-    return ret;
-}
 
 /**********************
  *   GLOBAL FUNCTIONS
@@ -178,19 +156,110 @@ int32_t get_brightness(int32_t *out_val)
     return ret;
 }
 
-int32_t get_and_res_actual_brightness()
+/*
+ * Report backlight state to remote side.
+ * Includes ALS enable flag and current brightness value.
+ */
+int32_t report_backlight_state(void)
 {
-    int32_t brightness_val;
-    int ret;
+    remote_cmd_t *cmd;
+    int32_t ret = 0;
+    int32_t brightness = 0;
+    bool als_enabled;
 
-    ret = get_brightness(&brightness_val);
-    if (ret < 0) {
-        return ret;
-    } else {
-        LOG_TRACE("Actual brightness value %d, ret %d", brightness_val, ret);
-        ret = res_actual_brightness_value(brightness_val);
+    als_enabled = get_ctx()->cfg.als_en;
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                                  OP_BACKLIGHT_STATE);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -ENOMEM;
     }
+
+    ret = remote_cmd_add_int(cmd, "als", als_enabled ? 1 : 0);
+    if (ret) {
+        LOG_ERROR("Add ALS state failed, ret %d", ret);
+        goto out_free;
+    }
+
+    ret = get_brightness(&brightness);
+    if (ret) {
+        LOG_WARN("Get brightness failed, ret %d, using fallback 0", ret);
+        brightness = 0;
+    }
+
+    ret = remote_cmd_add_int(cmd, "brightness", brightness);
+    if (ret) {
+        LOG_ERROR("Add brightness value failed, ret %d", ret);
+        goto out_free;
+    }
+
+    /* Command data will be released after the work completes */
+    return create_remote_task(WORK_PRIO_HIGH, cmd);
+
+out_free:
+    delete_remote_cmd(cmd);
+    return ret ? ret : -EIO;
+}
+
+/*
+ * Backlight control interface
+ *
+ * In any startup situation, the system does not know what brightness
+ * is expected or what is compatible with current ambient conditions.
+ * Letting the ambient light sensor (ALS) handle the first brightness
+ * adjustment is the safest and most adaptive approach.
+ */
+int32_t enable_backlight(void)
+{
+    char dev_path[MAX_PATH_LEN];
+    int32_t ret;
+
+    ret = als_late_init(ALS_SENSOR_NAME, dev_path, sizeof(dev_path));
+    if (ret) {
+        LOG_ERROR("ALS late init failed, ret %d", ret);
+        return ret;
+    }
+
+    ret = auto_brightness_handler(dev_path);
+    if (ret) {
+        LOG_ERROR("Initial auto brightness adjustment failed, ret %d", ret);
+        return ret;
+    }
+
+    LOG_INFO("Backlight enabled via ALS control");
+    return 0;
+}
+
+/*
+ * When disabling the backlight, the ALS configuration should remain
+ * persistent for the next enable sequence. However, the current
+ * brightness must be ramped down smoothly to zero to ensure a
+ * visually clean transition.
+ */
+int32_t disable_backlight(void)
+{
+    int32_t actual_brightness = 0;
+    int32_t ret;
+
+    ret = get_brightness(&actual_brightness);
+    if (ret) {
+        LOG_WARN("Get brightness failed, fallback to zero, ret %d", ret);
+        /* Force brightness to zero without smooth ramp */
+        return set_brightness(0);
+    }
+
+    if (actual_brightness == 0) {
+        LOG_TRACE("Backlight already disabled");
+        return 0;
+    }
+
+    /* Smooth transition to darkness (200ms ramp) */
+    ret = brightness_ramp(actual_brightness, 0, 200000);
+    if (ret)
+        LOG_WARN("Brightness ramp-down failed, ret %d", ret);
+    else
+        LOG_INFO("Backlight disabled (smooth ramp)");
 
     return ret;
 }
-

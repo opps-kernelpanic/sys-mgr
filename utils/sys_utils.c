@@ -146,7 +146,7 @@ void create_method_frame(remote_cmd_t *cmd)
 {
     cmd->component_id = "terminal-ui";
     cmd->umid = 1001;
-    cmd->opcode = OP_SET_BRIGHTNESS;
+    cmd->opcode = OP_ADJUST_BRIGHTNESS;
     cmd->entry_count = 2;
 
     cmd->entries[0].key = "backlight";
@@ -165,7 +165,7 @@ void create_signal_frame(remote_cmd_t *cmd)
 {
     cmd->component_id = "terminal-ui";
     cmd->umid = 1001;
-    cmd->opcode = OP_SET_BRIGHTNESS;
+    cmd->opcode = OP_ADJUST_BRIGHTNESS;
     cmd->entry_count = 2;
 
     cmd->entries[0].key = "backlight";
