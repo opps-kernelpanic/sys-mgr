@@ -160,7 +160,7 @@ int32_t get_brightness(int32_t *out_val)
  * Report backlight state to remote side.
  * Includes ALS enable flag and current brightness value.
  */
-int32_t report_backlight_state(void)
+int32_t report_backlight_state(bool logical, int32_t target)
 {
     remote_cmd_t *cmd;
     int32_t ret = 0;
@@ -182,10 +182,14 @@ int32_t report_backlight_state(void)
         goto out_free;
     }
 
-    ret = get_brightness(&brightness);
-    if (ret) {
-        LOG_WARN("Get brightness failed, ret %d, using fallback 0", ret);
-        brightness = 0;
+    if (logical) {
+        brightness = target;
+    } else {
+        ret = get_brightness(&brightness);
+        if (ret) {
+            LOG_WARN("Get brightness failed, ret %d, using fallback 0", ret);
+            brightness = 0;
+        }
     }
 
     ret = remote_cmd_add_int(cmd, "brightness", brightness);
@@ -221,7 +225,7 @@ int32_t enable_backlight(void)
         return ret;
     }
 
-    ret = auto_brightness_handler(dev_path);
+    ret = handle_auto_brightness(dev_path);
     if (ret) {
         LOG_ERROR("Initial auto brightness adjustment failed, ret %d", ret);
         return ret;

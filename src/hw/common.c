@@ -93,7 +93,7 @@ void *hw_monitor_loop()
     while (get_ctx()->run) {
         // TODO: create work
         if (get_ctx()->cfg.als_en == true) {
-            auto_brightness_handler(dev_path);
+            handle_auto_brightness(dev_path);
         }
         if (get_ctx()->cfg.imu_en == true) {
             update_imu_state();

@@ -44,6 +44,8 @@
 /**********************
  *      MACROS
  **********************/
+#define clamp(val, min, max) \
+    ((val) < (min) ? (min) : ((val) > (max) ? (max) : (val)))
 
 /**********************
  *   STATIC FUNCTIONS
@@ -115,45 +117,44 @@ int32_t als_read_illuminance(const char *dev_path, int32_t *out_val)
     return 0;
 }
 
-int32_t auto_brightness_handler(const char *dev_path)
+int32_t handle_auto_brightness(const char *dev_path)
 {
     int32_t ret;
-    int32_t lux_value = 0;
-    int32_t pct_min = 1, pct_max = 100;
-    int32_t lux_max = 500;
-    int32_t brightness_pct, actual_brightness;
+    int32_t lux, brightness, target;
+    const int32_t lux_max = 500;
+    const int32_t pct_min = 0, pct_max = 100;
+    const int32_t step_thresh = 5;
 
-    ret = als_read_illuminance(dev_path, &lux_value);
+    ret = als_read_illuminance(dev_path, &lux);
     if (ret)
         return ret;
 
     /* Map illuminance (lux) to brightness percent */
-    brightness_pct = (lux_value * pct_max) / lux_max;
+    target = (lux * pct_max) / lux_max;
+    target = clamp(target, pct_min, pct_max);
 
-    if (brightness_pct < pct_min)
-        brightness_pct = pct_min;
-    else if (brightness_pct > pct_max)
-        brightness_pct = pct_max;
+    LOG_TRACE("ALS: %d lux -> target %d%%", lux, target);
 
-    LOG_TRACE("ALS report %d lux -> target %d%% brightness", \
-              lux_value, brightness_pct);
-
-    ret = get_brightness(&actual_brightness);
+    ret = get_brightness(&brightness);
     if (ret)
         return ret;
 
-    if (brightness_pct == actual_brightness)
+    /* Skip small variations to avoid flicker */
+    if (abs(target - brightness) < step_thresh)
         return 0;
 
-    /* Smooth transition to new brightness level (200ms ramp) */
-    ret = brightness_ramp(actual_brightness, brightness_pct, 200000);
+    ret = report_backlight_state(true, target);
+    if (ret)
+        LOG_WARN("Report backlight target state failed, ret %d", ret);
+
+    /* Smoothly ramp to new brightness (500ms) */
+    ret = brightness_ramp(brightness, target, 500000);
     if (ret)
         return ret;
 
-    ret = report_backlight_state();
-    if (ret) {
-        LOG_WARN("Report backlight state to UI failed, ret %d", ret);
-    }
+    ret = report_backlight_state(false, 0);
+    if (ret)
+        LOG_WARN("Report backlight state failed, ret %d", ret);
 
     return 0;
 }

@@ -78,7 +78,7 @@ int32_t process_opcode(uint32_t opcode, void *data)
         ret = set_brightness( (*((remote_cmd_t *)data)).entries[0].value.i32);
         break;
     case OP_BACKLIGHT_STATE:
-        ret = report_backlight_state();
+        ret = report_backlight_state(false, 0);
         break;
     case OP_LEFT_VIBRATOR:
         ret = rumble_trigger(2, 80, 150);
