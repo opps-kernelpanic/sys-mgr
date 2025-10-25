@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #include <dbus/dbus.h>
+#include <NetworkManager.h>
 
 #include "sched/workqueue.h"
 
@@ -28,6 +29,7 @@ typedef struct op_handler {
 
 typedef struct comm_handler {
     DBusConnection *dbus_conn;
+    NMClient *nm_client;
     int32_t event;
 } comm_t;
 

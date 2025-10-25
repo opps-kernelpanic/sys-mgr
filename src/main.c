@@ -210,6 +210,8 @@ static void service_shutdown_flow(void)
         cnt = workqueue_active_count(get_wq(SYSTEM_WQ));
     }
 
+    network_manager_comm_deinit();
+
     hw_monitor_deinit();
 
     /* Stop background threads and notify shutdown */

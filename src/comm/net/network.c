@@ -16,6 +16,8 @@
 #include <glib.h>
 #include <NetworkManager.h>
 
+#include "main.h"
+
 /*********************
  *      DEFINES
  *********************/
@@ -27,7 +29,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-NMClient *nm_client = NULL;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -48,15 +49,15 @@ NMClient *nm_client = NULL;
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
-NMClient * get_nm_client()
+NMClient *get_nm_client()
 {
-    return nm_client;
+    return (NMClient *)get_ctx()->comm.nm_client;
 }
 
 void set_nm_client( NMClient *client)
 {
     // Mutex ?
-    nm_client = client;
+    get_ctx()->comm.nm_client = client;
 }
 
 int32_t network_manager_comm_init()
