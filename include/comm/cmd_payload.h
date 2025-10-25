@@ -64,10 +64,12 @@ typedef enum {
     OP_SOUND_PLAY,
 
     /* Network API */
-    OP_WIFI_RESCAN,
+    OP_WIFI_ENABLE,
+    OP_WIFI_DISABLE,
+    OP_WIFI_GET_CACHED_AP_LIST,
     OP_WIFI_GET_AP_LIST,
     OP_WIFI_GET_AP_INFO,
-    OP_WIFI_CONN_AP,
+    OP_WIFI_CONNECT_AP,
 
     OP_ID_END,
 } opcode_t;
