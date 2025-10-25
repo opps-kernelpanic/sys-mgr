@@ -156,7 +156,7 @@ static int32_t service_startup_flow(void)
         goto exit_dbus;
     }
 
-    ret = network_manager_comm_init();
+    ret = init_network_manager_client();
     if (ret) {
         LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
         goto exit_hw_mon;
@@ -210,7 +210,7 @@ static void service_shutdown_flow(void)
         cnt = workqueue_active_count(get_wq(SYSTEM_WQ));
     }
 
-    network_manager_comm_deinit();
+    deinit_network_manager_client();
 
     hw_monitor_deinit();
 

@@ -13,6 +13,7 @@
 #include "log.h"
 
 #include <stdio.h>
+#include <errno.h>
 #include <glib.h>
 #include <NetworkManager.h>
 
@@ -45,6 +46,22 @@
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+static void disconnect_interface_cb(GObject *source_obj, GAsyncResult *res, \
+				                    gpointer user_data)
+{
+	NMDevice *dev;
+	g_autoptr(GError) error = NULL;
+
+	dev = NM_DEVICE(source_obj);
+
+	if (!nm_device_disconnect_finish(dev, res, &error)) {
+		LOG_ERROR("Async disconnect failed: %s", error->message);
+		return;
+	}
+
+	LOG_INFO("Interface %s disconnected successfully",
+		 nm_device_get_iface(dev));
+}
 
 /**********************
  *   GLOBAL FUNCTIONS
@@ -60,64 +77,89 @@ void set_nm_client( NMClient *client)
     get_ctx()->comm.nm_client = client;
 }
 
-int32_t network_manager_comm_init()
+int32_t init_network_manager_client(void)
 {
-    g_autoptr(GError) error = NULL;
-    NMClient *client = NULL;
+	NMClient *client;
+	g_autoptr(GError) error = NULL;
 
-    client = nm_client_new(NULL, &error);
-    if (!client) {
-        LOG_ERROR("Failed to create NMClient: %s\n", error->message);
-        return EXIT_FAILURE;
-    }
-    set_nm_client(client);
+	/* Initialize a new NetworkManager client instance */
+	client = nm_client_new(NULL, &error);
+	if (!client) {
+		LOG_ERROR("Failed to create NMClient: %s", error->message);
+		return -EIO;
+	}
 
-    return EXIT_SUCCESS;
+	set_nm_client(client);
+	LOG_INFO("NetworkManager client initialized");
+	return 0;
 }
 
-void network_manager_comm_deinit()
+void deinit_network_manager_client(void)
 {
-    NMClient *client = get_nm_client();
+	NMClient *client;
 
-    if (client) {
-        g_object_unref(client);
-        set_nm_client(NULL);
-    }
+	/* Release the NetworkManager client instance */
+	client = get_nm_client();
+	if (!client)
+		return;
+
+	g_object_unref(client);
+	set_nm_client(NULL);
+
+	LOG_INFO("NetworkManager client deinitialized");
 }
 
-NMDevice * g_nm_device_get_by_iface(const char *exp_iface)
+NMDevice *get_nm_dev_by_iface(const char *iface)
 {
-    NMClient *client = get_nm_client();
-    const GPtrArray *devs = nm_client_get_devices(client);
-    const char *iface;
+	NMClient *client;
+	const GPtrArray *devs;
+	const char *tmp_iface;
+	NMDevice *net_dev;
+	guint i;
 
-    for (guint i = 0; i < devs->len; ++i) {
-        NMDevice *net_dev = g_ptr_array_index(devs, i);
-        iface = nm_device_get_iface(net_dev);
-        if (net_dev && !strcmp(iface, exp_iface)) {
-            LOG_TRACE("Found network interface: %s", iface);
-            return net_dev;
-        } else {
-            LOG_TRACE("Detected device interface: %s", iface);
-        }
-    }
+	/* Get NetworkManager client and device list */
+	client = get_nm_client();
+	devs = nm_client_get_devices(client);
 
-    return NULL;
+	for (i = 0; i < devs->len; ++i) {
+		net_dev = g_ptr_array_index(devs, i);
+		if (!net_dev)
+			continue;
+
+		tmp_iface = nm_device_get_iface(net_dev);
+		if (!strcmp(tmp_iface, iface)) {
+			LOG_TRACE("Expected interface detected: %s", tmp_iface);
+			return net_dev;
+		}
+
+		LOG_TRACE("Other NM interface found: %s", tmp_iface);
+	}
+
+	return NULL;
 }
 
-// TODO: Listen to state change signal from NM
-int32_t disconnect_interface(const char *exp_iface)
+int32_t disconnect_interface(const char *iface)
 {
-    g_autoptr(GError) error = NULL;
-    NMDevice *dev = g_nm_device_get_by_iface(exp_iface);
-    if (!dev) {
-        return EXIT_FAILURE;
-    }
+	NMDevice *dev;
+	GCancellable *cancel;
+	g_autoptr(GError) error = NULL;
 
-    if (!nm_device_disconnect(dev, NULL, &error)) {
-        LOG_ERROR("Failed to disconnect: %s\n", error->message);
-        return EXIT_FAILURE;
-    }
+	/* Lookup the NM device by interface name */
+	dev = get_nm_dev_by_iface(iface);
+	if (!dev)
+		return -EIO;
 
-    return EXIT_SUCCESS;
+	cancel = g_cancellable_new();
+
+	/*
+	 * Asynchronously request device disconnection.
+	 * The callback handles result reporting.
+	 */
+	nm_device_disconnect_async(dev,
+				   cancel,
+				   (GAsyncReadyCallback)disconnect_interface_cb,
+				   NULL);
+
+	g_object_unref(cancel);
+	return 0;
 }

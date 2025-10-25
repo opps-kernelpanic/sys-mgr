@@ -6,15 +6,36 @@
 #ifndef G_NETWORK_H
 #define G_NETWORK_H
 
+/*********************
+ *      INCLUDES
+ *********************/
 #include <NetworkManager.h>
 
+/*********************
+ *      DEFINES
+ *********************/
+
+/**********************
+ *      TYPEDEFS
+ **********************/
+
+/**********************
+ *      MACROS
+ **********************/
+
+/**********************
+ *  GLOBAL VARIABLES
+ **********************/
+
+/**********************
+ *  GLOBAL PROTOTYPES
+ **********************/
+int32_t init_network_manager_client();
+void deinit_network_manager_client();
 NMClient *get_nm_client();
-int32_t network_manager_comm_init();
-void network_manager_comm_deinit();
 
-int32_t disconnect_interface(const char *exp_iface);
-
-NMDevice * g_nm_device_get_by_iface(const char *exp_iface);
+NMDevice * get_nm_dev_by_iface(const char *iface);
+int32_t disconnect_interface(const char *iface);
 
 int32_t wifi_scan_and_get_results(const char *iface, int32_t scan);
 int32_t wifi_connect_to_ssid(const char *iface, const char *ssid, \

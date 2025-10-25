@@ -64,7 +64,7 @@ int32_t wifi_disconnect_device(const char *iface_name)
     NMDevice *dev;
     GError *error = NULL;
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = get_nm_dev_by_iface(iface_name);
     if (!dev) {
         LOG_ERROR("Device %s not found", iface_name);
         return EXIT_FAILURE;
@@ -99,7 +99,7 @@ int32_t wifi_is_connected_to_ssid(const char *iface_name, const char *ssid)
     char *active_ssid_str;
     int32_t connected;
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = get_nm_dev_by_iface(iface_name);
     if (!dev) {
         LOG_ERROR("Device %s not found", iface_name);
         return -1;
@@ -152,7 +152,7 @@ int32_t wifi_list_access_points(const char *iface_name)
     int32_t strength;
     NM80211ApSecurityFlags sec_flags;
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = get_nm_dev_by_iface(iface_name);
     if (!dev) {
         LOG_ERROR("Device %s not found", iface_name);
         return EXIT_FAILURE;
@@ -509,7 +509,7 @@ int32_t wifi_connect_to_ssid(const char *iface_name, const char *ssid,
         return EXIT_FAILURE;
     }
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = get_nm_dev_by_iface(iface_name);
     if (!dev) {
         LOG_ERROR("Device %s not found", iface_name);
         return EXIT_FAILURE;
