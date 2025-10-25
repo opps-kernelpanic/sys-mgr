@@ -93,31 +93,26 @@ NMDevice *find_nm_wifi_device(void)
 /**
  * Disconnect the given Wi-Fi device from any connected AP.
  */
-int32_t wifi_disconnect_device(const char *iface_name)
+int32_t disconnect_wifi_device(void)
 {
     NMDevice *dev;
+	const char *tmp_iface;
     GError *error = NULL;
 
-    dev = get_nm_dev_by_iface(iface_name);
+    dev = find_nm_wifi_device();
     if (!dev) {
-        LOG_ERROR("Device %s not found", iface_name);
-        return EXIT_FAILURE;
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
     }
 
-    if (!NM_IS_DEVICE_WIFI(dev)) {
-        LOG_ERROR("Device %s is not a Wi-Fi device", iface_name);
-        return EXIT_FAILURE;
-    }
+	tmp_iface = nm_device_get_iface(dev);
+    if (!tmp_iface)
+        return -EIO;
 
-    LOG_INFO("Disconnecting device %s...", iface_name);
-    nm_device_disconnect(dev, NULL, &error);
-    if (error) {
-        LOG_ERROR("Disconnect failed: %s", error->message);
-        g_error_free(error);
-        return EXIT_FAILURE;
-    }
+    LOG_INFO("Disconnecting device %s...", tmp_iface);
+    disconnect_interface(tmp_iface);
 
-    return EXIT_SUCCESS;
+    return 0;
 }
 
 /**
