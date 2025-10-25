@@ -37,6 +37,7 @@ NMClient *get_nm_client();
 NMDevice * get_nm_dev_by_iface(const char *iface);
 int32_t disconnect_interface(const char *iface);
 
+NMDevice *find_nm_wifi_device(void);
 int32_t wifi_scan_and_get_results(const char *iface, int32_t scan);
 int32_t wifi_connect_to_ssid(const char *iface, const char *ssid, \
                          const char *password);

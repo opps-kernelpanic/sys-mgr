@@ -56,6 +56,40 @@ typedef struct {
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+NMDevice *find_nm_wifi_device(void)
+{
+	NMClient *client;
+	const GPtrArray *devs;
+	const char *tmp_iface;
+	NMDevice *net_dev;
+	guint i;
+
+	/* Get NetworkManager client and device list */
+	client = get_nm_client();
+    if (!client)
+        return NULL;
+
+	devs = nm_client_get_devices(client);
+    if (!devs)
+        return NULL;
+
+	for (i = 0; i < devs->len; ++i) {
+		net_dev = g_ptr_array_index(devs, i);
+		if (!net_dev)
+			continue;
+
+		tmp_iface = nm_device_get_iface(net_dev);
+        if (NM_DEVICE_TYPE_WIFI == nm_device_get_device_type(net_dev)) {
+			LOG_INFO("Expected Wi-Fi interface detected: %s", tmp_iface);
+			return net_dev;
+		}
+
+		LOG_TRACE("Other NM interface found: %s", tmp_iface);
+	}
+
+	return NULL;
+}
+
 /**
  * Disconnect the given Wi-Fi device from any connected AP.
  */
