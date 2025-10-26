@@ -19,6 +19,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <errno.h>
+#include <glib.h>
 #include <sys/epoll.h>
 #include <dbus/dbus.h>
 
@@ -116,6 +117,107 @@ static void destroy_ctx(void)
 
 ctx_t *get_ctx(void);
 
+static int32_t create_g_main_loop_ctx(void)
+{
+	ctx_t *ctx;
+	GMainContext *g_main_ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx)
+		return -EIO;
+
+	g_main_ctx = g_main_context_default();
+	if (!g_main_ctx) {
+		LOG_ERROR("Failed to get default GMainContext");
+		return -EIO;
+	}
+
+	g_main_loop = g_main_loop_new(g_main_ctx, FALSE);
+	if (!g_main_loop) {
+		LOG_ERROR("Failed to create GMainLoop");
+		return -EIO;
+	}
+
+	ctx->g_main.ctx = g_main_ctx;
+	ctx->g_main.loop = g_main_loop;
+
+	LOG_INFO("GMainLoop context created");
+	return 0;
+}
+
+static int32_t start_g_main_loop(void)
+{
+	ctx_t *ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx)
+		return -EIO;
+
+	g_main_loop = ctx->g_main.loop;
+	if (!g_main_loop) {
+		LOG_ERROR("GMainLoop does not exist");
+		return -EIO;
+	}
+
+	LOG_INFO("GMainLoop started");
+	g_main_loop_run(g_main_loop);
+	LOG_INFO("GMainLoop exited cleanly");
+
+	return 0;
+}
+
+static void stop_g_main_loop(void)
+{
+	ctx_t *ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx)
+		return;
+
+	g_main_loop = ctx->g_main.loop;
+	if (!g_main_loop)
+		return;
+
+	if (g_main_loop_is_running(g_main_loop)) {
+		LOG_INFO("Stopping GMainLoop...");
+		g_main_loop_quit(g_main_loop);
+		LOG_INFO("GMainLoop stopped");
+	}
+}
+
+
+static void destroy_g_main_loop_ctx(void)
+{
+	ctx_t *ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx) {
+		LOG_ERROR("Context is NULL");
+		return;
+	}
+
+	g_main_loop = ctx->g_main.loop;
+	if (!g_main_loop) {
+		LOG_INFO("GMainLoop already destroyed");
+		return;
+	}
+
+	if (g_main_loop_is_running(g_main_loop)) {
+		LOG_WARN("GMainLoop still running, forcing quit");
+		g_main_loop_quit(g_main_loop);
+	}
+
+	g_main_loop_unref(g_main_loop);
+	ctx->g_main.loop = NULL;
+
+	/* ctx->g_main.ctx is default, do not unref */
+	LOG_INFO("GMainLoop context destroyed");
+}
+
 static int32_t service_startup_flow(void)
 {
     int32_t ret;
@@ -156,10 +258,16 @@ static int32_t service_startup_flow(void)
         goto exit_dbus;
     }
 
-    ret = init_network_manager_client();
+    ret = create_g_main_loop_ctx();
     if (ret) {
         LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
         goto exit_hw_mon;
+    }
+
+    ret = init_network_manager_client();
+    if (ret) {
+        LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
+        goto exit_g_main_loop;
     }
 
 
@@ -169,6 +277,9 @@ static int32_t service_startup_flow(void)
     return 0;
 
 /* Cleanup sequence in case of failure */
+
+exit_g_main_loop:
+    destroy_g_main_loop_ctx();
 
 exit_hw_mon:
     hw_monitor_deinit();
@@ -212,6 +323,9 @@ static void service_shutdown_flow(void)
 
     deinit_network_manager_client();
 
+    stop_g_main_loop();
+    destroy_g_main_loop_ctx();
+
     hw_monitor_deinit();
 
     /* Stop background threads and notify shutdown */
@@ -231,6 +345,9 @@ static void service_shutdown_flow(void)
 static int32_t main_loop()
 {
     LOG_INFO("System manager service is running...");
+
+    start_g_main_loop();
+
     while (get_ctx()->run) {
         usleep(200000);
     };

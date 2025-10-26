@@ -14,6 +14,7 @@
 #include <dbus/dbus.h>
 #include <NetworkManager.h>
 
+#include "comm/net/network.h"
 #include "sched/workqueue.h"
 
 /*********************
@@ -23,6 +24,11 @@
 /**********************
  *      TYPEDEFS
  **********************/
+typedef struct {
+    GMainLoop *loop;
+    GMainContext *ctx;
+} g_ctx_t;
+
 typedef struct op_handler {
     struct list_head handler_lst;       /* List of registered opcode handlers */
 } op_t;
@@ -42,6 +48,7 @@ typedef struct conf_data {
 typedef struct ctx {
     sig_atomic_t run;
     wq_ctx_t *wqs;
+    g_ctx_t g_main;
     op_t op;
     comm_t comm;
     conf_t cfg;
