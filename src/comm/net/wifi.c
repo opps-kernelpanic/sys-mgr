@@ -121,6 +121,64 @@ int32_t disconnect_wifi_device(void)
     return 0;
 }
 
+int32_t get_available_wifi_access_points(void)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    const GPtrArray *aps;
+    guint i;
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    wifi_dev = NM_DEVICE_WIFI(dev);
+    aps = nm_device_wifi_get_access_points(wifi_dev);
+
+    if (!aps || aps->len == 0) {
+        LOG_WARN("No access points found on %s", nm_device_get_iface(dev));
+        return 0;
+    }
+
+    LOG_INFO("Device %s: found %u access points", nm_device_get_iface(dev),
+             aps->len);
+
+    for (i = 0; i < aps->len; i++) {
+        NMAccessPoint *ap;
+        GBytes *ssid_bytes;
+        char *ssid_str;
+        int32_t strength;
+        int32_t freq;
+        int32_t bit_rate;
+        NM80211ApSecurityFlags sec_flags;
+
+        ap = g_ptr_array_index(aps, i);
+        ssid_bytes = nm_access_point_get_ssid(ap);
+        if (!ssid_bytes)
+            continue;
+
+        ssid_str = nm_utils_ssid_to_utf8(g_bytes_get_data(ssid_bytes, NULL),
+                                         g_bytes_get_size(ssid_bytes));
+        strength = nm_access_point_get_strength(ap);
+        sec_flags = nm_access_point_get_flags(ap);
+        freq = nm_access_point_get_frequency(ap);
+        bit_rate = nm_access_point_get_max_bitrate(ap);
+
+        LOG_INFO("  SSID: %-30s - %4d MHz - %5d kbit/s - %3d%% - Flags: 0x%x",
+                 ssid_str ? ssid_str : "<hidden>",
+                 freq,
+                 bit_rate,
+                 strength,
+                 sec_flags);
+
+        g_free(ssid_str);
+    }
+
+    return 0;
+}
+
 /**
  * Check if given Wi-Fi device is connected to target SSID.
  * Return 1 if connected, 0 if not connected, -1 on error.
@@ -173,57 +231,6 @@ int32_t wifi_is_connected_to_ssid(const char *iface_name, const char *ssid)
     g_free(active_ssid_str);
 
     return connected;
-}
-
-int32_t wifi_list_access_points(const char *iface_name)
-{
-    NMDevice *dev;
-    NMDeviceWifi *wifi_device;
-    const GPtrArray *aps;
-    NMAccessPoint *ap;
-    GBytes *ssid_bytes;
-    char *ssid_str;
-    guint i;
-    int32_t strength;
-    NM80211ApSecurityFlags sec_flags;
-
-    dev = get_nm_dev_by_iface(iface_name);
-    if (!dev) {
-        LOG_ERROR("Device %s not found", iface_name);
-        return EXIT_FAILURE;
-    }
-
-    if (!NM_IS_DEVICE_WIFI(dev)) {
-        LOG_ERROR("Device %s is not a Wi-Fi device", iface_name);
-        return EXIT_FAILURE;
-    }
-
-    wifi_device = NM_DEVICE_WIFI(dev);
-    aps = nm_device_wifi_get_access_points(wifi_device);
-
-    LOG_INFO("Device %s: found %u access points", iface_name, aps->len);
-
-    for (i = 0; i < aps->len; i++) {
-        ap = g_ptr_array_index(aps, i);
-        GBytes *ssid_bytes = nm_access_point_get_ssid(ap);
-        if (!ssid_bytes)
-            continue;
-
-        ssid_str = nm_utils_ssid_to_utf8(g_bytes_get_data(ssid_bytes, NULL),
-                                         g_bytes_get_size(ssid_bytes));
-
-        strength = nm_access_point_get_strength(ap);
-        sec_flags = nm_access_point_get_flags(ap);
-
-        LOG_INFO("  SSID: %-30s Strength: %3d%% SecurityFlags: 0x%x",
-                 ssid_str ? ssid_str : "<hidden>",
-                 strength,
-                 sec_flags);
-
-        g_free(ssid_str);
-    }
-
-    return EXIT_SUCCESS;
 }
 
 NMAccessPoint *find_ap_on_wifi_device(NMDevice *device, \
