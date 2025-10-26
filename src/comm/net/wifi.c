@@ -53,6 +53,55 @@ typedef struct {
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+static void scan_wifi_cb(GObject *source_obj, GAsyncResult *res, \
+			              gpointer user_data)
+{
+	NMDevice *dev;
+	NMDeviceWifi *wifi_dev;
+	g_autoptr(GError) error = NULL;
+
+	dev = NM_DEVICE(source_obj);
+	wifi_dev = NM_DEVICE_WIFI(dev);
+
+	if (!nm_device_wifi_request_scan_finish(wifi_dev, res, &error)) {
+		LOG_ERROR("Async Wi-Fi scan failed: %s", error->message);
+		return;
+	}
+
+	LOG_INFO("Interface %s: Wi-Fi scan completed successfully",
+	         nm_device_get_iface(dev));
+}
+
+static int32_t scan_available_wifi_access_point(void)
+{
+	NMDevice *dev;
+	NMDeviceWifi *wifi_dev;
+	GCancellable *cancel;
+
+	dev = find_nm_wifi_device();
+	if (!dev) {
+		LOG_ERROR("Wi-Fi device not found");
+		return -EIO;
+	}
+
+	wifi_dev = NM_DEVICE_WIFI(dev);
+
+    // TODO: relocation this signal register
+    g_signal_connect(wifi_dev, "notify::" NM_DEVICE_WIFI_LAST_SCAN,
+                     G_CALLBACK(get_available_wifi_access_points),
+                                                            NULL);
+
+	cancel = g_cancellable_new();
+	nm_device_wifi_request_scan_async(wifi_dev, cancel, \
+					  (GAsyncReadyCallback)scan_wifi_cb, \
+					  NULL);
+	g_object_unref(cancel);
+
+	LOG_INFO("Wi-Fi scan request sent for device %s",
+	         nm_device_get_iface(dev));
+
+	return 0;
+}
 
 /**********************
  *   GLOBAL FUNCTIONS
@@ -177,6 +226,29 @@ int32_t get_available_wifi_access_points(void)
     }
 
     return 0;
+}
+
+int32_t request_wifi_rescan_access_point(void)
+{
+	ctx_t *ctx;
+	GMainContext *g_main_ctx;
+
+	ctx = get_ctx();
+	if (!ctx) {
+		LOG_ERROR("Context is NULL");
+		return -EIO;
+	}
+
+	g_main_ctx = ctx->g_main.ctx;
+	if (!g_main_ctx) {
+		LOG_ERROR("GMainContext not available");
+		return -EIO;
+	}
+
+	g_main_context_invoke(g_main_ctx, scan_available_wifi_access_point, NULL);
+	LOG_DEBUG("Wi-Fi rescan requested via main context");
+
+	return 0;
 }
 
 /**

@@ -39,6 +39,8 @@ int32_t disconnect_interface(const char *iface);
 
 NMDevice *find_nm_wifi_device(void);
 int32_t disconnect_wifi_device(void);
+int32_t get_available_wifi_access_points(void);
+int32_t request_wifi_rescan_access_point(void);
 
 int32_t wifi_scan_and_get_results(const char *iface, int32_t scan);
 int32_t wifi_connect_to_ssid(const char *iface, const char *ssid, \
