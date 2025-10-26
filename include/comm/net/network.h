@@ -37,7 +37,8 @@ NMClient *get_nm_client();
 NMDevice * get_nm_dev_by_iface(const char *iface);
 int32_t disconnect_interface(const char *iface);
 
-NMDevice *find_nm_wifi_device(void);
+int32_t enable_wifi_device(void);
+int32_t disable_wifi_device(void);
 int32_t disconnect_wifi_device(void);
 int32_t get_available_wifi_access_points(void);
 int32_t request_wifi_rescan_access_point(void);

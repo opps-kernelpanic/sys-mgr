@@ -106,9 +106,11 @@ int32_t process_opcode(uint32_t opcode, void *data)
         ret = audio_play_sound("/usr/share/sounds/sound-icons/percussion-10.wav");
         break;
     case OP_WIFI_ENABLE:
-        wifi_list_access_points("wlu1u4i2");
+        enable_wifi_device();
         break;
-
+    case OP_WIFI_DISABLE:
+        disable_wifi_device();
+        break;
     default:
         LOG_ERROR("Opcode [%d] is invalid", opcode);
         break;

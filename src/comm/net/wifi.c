@@ -54,90 +54,156 @@ typedef struct {
  *   STATIC FUNCTIONS
  **********************/
 static void scan_wifi_cb(GObject *source_obj, GAsyncResult *res, \
-			              gpointer user_data)
+                          gpointer user_data)
 {
-	NMDevice *dev;
-	NMDeviceWifi *wifi_dev;
-	g_autoptr(GError) error = NULL;
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    g_autoptr(GError) error = NULL;
 
-	dev = NM_DEVICE(source_obj);
-	wifi_dev = NM_DEVICE_WIFI(dev);
+    dev = NM_DEVICE(source_obj);
+    wifi_dev = NM_DEVICE_WIFI(dev);
 
-	if (!nm_device_wifi_request_scan_finish(wifi_dev, res, &error)) {
-		LOG_ERROR("Async Wi-Fi scan failed: %s", error->message);
-		return;
-	}
+    if (!nm_device_wifi_request_scan_finish(wifi_dev, res, &error)) {
+        LOG_ERROR("Async Wi-Fi scan failed: %s", error->message);
+        return;
+    }
 
-	LOG_INFO("Interface %s: Wi-Fi scan completed successfully",
-	         nm_device_get_iface(dev));
+    LOG_INFO("Interface %s: Wi-Fi scan completed successfully",
+             nm_device_get_iface(dev));
 }
 
 static int32_t scan_available_wifi_access_point(void)
 {
-	NMDevice *dev;
-	NMDeviceWifi *wifi_dev;
-	GCancellable *cancel;
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    GCancellable *cancel;
 
-	dev = find_nm_wifi_device();
-	if (!dev) {
-		LOG_ERROR("Wi-Fi device not found");
-		return -EIO;
-	}
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
 
-	wifi_dev = NM_DEVICE_WIFI(dev);
+    wifi_dev = NM_DEVICE_WIFI(dev);
 
     // TODO: relocation this signal register
     g_signal_connect(wifi_dev, "notify::" NM_DEVICE_WIFI_LAST_SCAN,
                      G_CALLBACK(get_available_wifi_access_points),
                                                             NULL);
 
-	cancel = g_cancellable_new();
-	nm_device_wifi_request_scan_async(wifi_dev, cancel, \
-					  (GAsyncReadyCallback)scan_wifi_cb, \
-					  NULL);
-	g_object_unref(cancel);
+    cancel = g_cancellable_new();
+    nm_device_wifi_request_scan_async(wifi_dev, cancel, \
+                      (GAsyncReadyCallback)scan_wifi_cb, \
+                      NULL);
+    g_object_unref(cancel);
 
-	LOG_INFO("Wi-Fi scan request sent for device %s",
-	         nm_device_get_iface(dev));
+    LOG_INFO("Wi-Fi scan request sent for device %s",
+             nm_device_get_iface(dev));
 
-	return 0;
+    return 0;
 }
 
+static void wireless_state_changed_cb(GObject *object, GParamSpec *pspec, \
+                      gpointer user_data)
+{
+    gboolean enabled;
+    NMClient *client = NM_CLIENT(object);
+
+    g_object_get(client, "wireless-enabled", &enabled, NULL);
+
+    LOG_INFO("Wireless state changed: %s", enabled ? "enabled" : "disabled");
+}
+
+/*
+ * soft_control_wifi - Enable or disable Wi-Fi interface via NetworkManager
+ * @enable: TRUE to enable, FALSE to disable
+ *
+ * Returns: 0 on success, negative errno on failure.
+ */
+static int32_t soft_control_wifi(gboolean enable)
+{
+    NMClient *client;
+    NMDevice *dev;
+    const char *iface;
+
+    client = get_nm_client();
+    if (!client) {
+        LOG_ERROR("NMClient is NULL");
+        return -EIO;
+    }
+
+    /* Connect signal if not already connected */
+    if (!g_signal_handler_find(client, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, \
+                   G_CALLBACK(wireless_state_changed_cb), NULL)) {
+        // TODO: relocation to reduce cb available check
+        g_signal_connect(client, "notify::wireless-enabled", \
+                 G_CALLBACK(wireless_state_changed_cb), NULL);
+    }
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -ENODEV;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface) {
+        LOG_ERROR("Failed to get Wi-Fi interface name");
+        return -EINVAL;
+    }
+
+    LOG_DEBUG("%s Wi-Fi device: %s",
+         enable ? "Enabling" : "Disabling", iface);
+
+    g_object_set(client, "wireless-enabled", enable, NULL);
+
+    return 0;
+}
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+int32_t enable_wifi_device(void)
+{
+    return soft_control_wifi(TRUE);
+}
+
+int32_t disable_wifi_device(void)
+{
+    return soft_control_wifi(FALSE);
+}
+
 NMDevice *find_nm_wifi_device(void)
 {
-	NMClient *client;
-	const GPtrArray *devs;
-	const char *tmp_iface;
-	NMDevice *net_dev;
-	guint i;
+    NMClient *client;
+    const GPtrArray *devs;
+    const char *tmp_iface;
+    NMDevice *net_dev;
+    guint i;
 
-	/* Get NetworkManager client and device list */
-	client = get_nm_client();
+    /* Get NetworkManager client and device list */
+    client = get_nm_client();
     if (!client)
         return NULL;
 
-	devs = nm_client_get_devices(client);
+    devs = nm_client_get_devices(client);
     if (!devs)
         return NULL;
 
-	for (i = 0; i < devs->len; ++i) {
-		net_dev = g_ptr_array_index(devs, i);
-		if (!net_dev)
-			continue;
+    for (i = 0; i < devs->len; ++i) {
+        net_dev = g_ptr_array_index(devs, i);
+        if (!net_dev)
+            continue;
 
-		tmp_iface = nm_device_get_iface(net_dev);
+        tmp_iface = nm_device_get_iface(net_dev);
         if (NM_DEVICE_TYPE_WIFI == nm_device_get_device_type(net_dev)) {
-			LOG_INFO("Expected Wi-Fi interface detected: %s", tmp_iface);
-			return net_dev;
-		}
+            LOG_DEBUG("Expected Wi-Fi interface detected: %s", tmp_iface);
+            return net_dev;
+        }
 
-		LOG_TRACE("Other NM interface found: %s", tmp_iface);
-	}
+        LOG_TRACE("Other NM interface found: %s", tmp_iface);
+    }
 
-	return NULL;
+    return NULL;
 }
 
 /**
@@ -146,7 +212,7 @@ NMDevice *find_nm_wifi_device(void)
 int32_t disconnect_wifi_device(void)
 {
     NMDevice *dev;
-	const char *tmp_iface;
+    const char *tmp_iface;
     GError *error = NULL;
     GMainContext *g_main_ctx;
 
@@ -156,7 +222,7 @@ int32_t disconnect_wifi_device(void)
         return -EIO;
     }
 
-	tmp_iface = nm_device_get_iface(dev);
+    tmp_iface = nm_device_get_iface(dev);
     if (!tmp_iface)
         return -EIO;
 
@@ -230,25 +296,25 @@ int32_t get_available_wifi_access_points(void)
 
 int32_t request_wifi_rescan_access_point(void)
 {
-	ctx_t *ctx;
-	GMainContext *g_main_ctx;
+    ctx_t *ctx;
+    GMainContext *g_main_ctx;
 
-	ctx = get_ctx();
-	if (!ctx) {
-		LOG_ERROR("Context is NULL");
-		return -EIO;
-	}
+    ctx = get_ctx();
+    if (!ctx) {
+        LOG_ERROR("Context is NULL");
+        return -EIO;
+    }
 
-	g_main_ctx = ctx->g_main.ctx;
-	if (!g_main_ctx) {
-		LOG_ERROR("GMainContext not available");
-		return -EIO;
-	}
+    g_main_ctx = ctx->g_main.ctx;
+    if (!g_main_ctx) {
+        LOG_ERROR("GMainContext not available");
+        return -EIO;
+    }
 
-	g_main_context_invoke(g_main_ctx, scan_available_wifi_access_point, NULL);
-	LOG_DEBUG("Wi-Fi rescan requested via main context");
+    g_main_context_invoke(g_main_ctx, scan_available_wifi_access_point, NULL);
+    LOG_DEBUG("Wi-Fi rescan requested via main context");
 
-	return 0;
+    return 0;
 }
 
 /**
