@@ -18,6 +18,7 @@
 #include <NetworkManager.h>
 
 #include "comm/net/network.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -98,6 +99,7 @@ int32_t disconnect_wifi_device(void)
     NMDevice *dev;
 	const char *tmp_iface;
     GError *error = NULL;
+    GMainContext *g_main_ctx;
 
     dev = find_nm_wifi_device();
     if (!dev) {
@@ -110,8 +112,12 @@ int32_t disconnect_wifi_device(void)
         return -EIO;
 
     LOG_INFO("Disconnecting device %s...", tmp_iface);
-    disconnect_interface(tmp_iface);
 
+    g_main_ctx = get_ctx()->g_main.ctx;
+    if (!g_main_ctx)
+        return -EIO;
+    g_main_context_invoke(g_main_ctx, disconnect_interface, \
+                          (gpointer)tmp_iface);
     return 0;
 }
 
