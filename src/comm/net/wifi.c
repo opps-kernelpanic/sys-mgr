@@ -13,6 +13,7 @@
 #include "log.h"
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <glib.h>
 #include <glib-object.h>
 #include <NetworkManager.h>
@@ -53,6 +54,40 @@ typedef struct {
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+static NMDevice *find_nm_wifi_device(void)
+{
+    NMClient *client;
+    const GPtrArray *devs;
+    const char *tmp_iface;
+    NMDevice *net_dev;
+    guint i;
+
+    /* Get NetworkManager client and device list */
+    client = get_nm_client();
+    if (!client)
+        return NULL;
+
+    devs = nm_client_get_devices(client);
+    if (!devs)
+        return NULL;
+
+    for (i = 0; i < devs->len; ++i) {
+        net_dev = g_ptr_array_index(devs, i);
+        if (!net_dev)
+            continue;
+
+        tmp_iface = nm_device_get_iface(net_dev);
+        if (NM_DEVICE_TYPE_WIFI == nm_device_get_device_type(net_dev)) {
+            LOG_DEBUG("Expected Wi-Fi interface detected: %s", tmp_iface);
+            return net_dev;
+        }
+
+        LOG_TRACE("Other NM interface found: %s", tmp_iface);
+    }
+
+    return NULL;
+}
+
 static void scan_wifi_cb(GObject *source_obj, GAsyncResult *res, \
                           gpointer user_data)
 {
@@ -164,46 +199,50 @@ static int32_t soft_control_wifi(gboolean enable)
  **********************/
 int32_t enable_wifi_device(void)
 {
-    return soft_control_wifi(TRUE);
+    int32_t ret;
+    ctx_t *ctx;
+
+    ctx = get_ctx();
+    if (!ctx)
+        return -EIO;
+
+    if (ctx->cfg.wifi_en) {
+        LOG_WARN("Wi-Fi already enabled");
+        return 0;
+    }
+
+    ret = soft_control_wifi(true);
+    if (ret) {
+        LOG_ERROR("Enable Wi-Fi failed, ret=%d", ret);
+        return ret;
+    }
+
+    ctx->cfg.wifi_en = true;
+    return 0;
 }
 
 int32_t disable_wifi_device(void)
 {
-    return soft_control_wifi(FALSE);
-}
+    int32_t ret;
+    ctx_t *ctx;
 
-NMDevice *find_nm_wifi_device(void)
-{
-    NMClient *client;
-    const GPtrArray *devs;
-    const char *tmp_iface;
-    NMDevice *net_dev;
-    guint i;
+    ctx = get_ctx();
+    if (!ctx)
+        return -EIO;
 
-    /* Get NetworkManager client and device list */
-    client = get_nm_client();
-    if (!client)
-        return NULL;
-
-    devs = nm_client_get_devices(client);
-    if (!devs)
-        return NULL;
-
-    for (i = 0; i < devs->len; ++i) {
-        net_dev = g_ptr_array_index(devs, i);
-        if (!net_dev)
-            continue;
-
-        tmp_iface = nm_device_get_iface(net_dev);
-        if (NM_DEVICE_TYPE_WIFI == nm_device_get_device_type(net_dev)) {
-            LOG_DEBUG("Expected Wi-Fi interface detected: %s", tmp_iface);
-            return net_dev;
-        }
-
-        LOG_TRACE("Other NM interface found: %s", tmp_iface);
+    if (!ctx->cfg.wifi_en) {
+        LOG_WARN("Wi-Fi already disabled");
+        return 0;
     }
 
-    return NULL;
+    ret = soft_control_wifi(false);
+    if (ret) {
+        LOG_ERROR("Disable Wi-Fi failed, ret=%d", ret);
+        return ret;
+    }
+
+    ctx->cfg.wifi_en = false;
+    return 0;
 }
 
 /**

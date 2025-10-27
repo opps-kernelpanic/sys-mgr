@@ -40,9 +40,9 @@ typedef struct comm_handler {
 } comm_t;
 
 typedef struct conf_data {
-    int8_t brightness;
     bool als_en;
     bool imu_en;
+    bool wifi_en;
 } conf_t;
 
 typedef struct ctx {
