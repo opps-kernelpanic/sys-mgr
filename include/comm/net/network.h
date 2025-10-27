@@ -15,6 +15,8 @@
  *      DEFINES
  *********************/
 #define NM_SSID_MAX_LEN                 33  /* IEEE 802.11 */
+#define WIFI_STATE_WAIT_TIMEOUT_MS      10000  /* 10 seconds */
+#define WIFI_STATE_POLL_INTERVAL_MS     200   /* 200ms */
 
 /**********************
  *      TYPEDEFS
