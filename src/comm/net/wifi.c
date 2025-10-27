@@ -6,7 +6,7 @@
 /*********************
  *      INCLUDES
  *********************/
-// #define LOG_LEVEL LOG_LEVEL_TRACE
+#define LOG_LEVEL LOG_LEVEL_TRACE
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
@@ -197,17 +197,82 @@ static int32_t soft_control_wifi(gboolean enable)
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+int32_t get_wifi_connected_ap_ssid(char *out_ssid)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    const char *iface;
+    NMAccessPoint *ap;
+    GBytes *ssid;
+    const guint8 *ssid_data;
+    char *ssid_str;
+    gsize ssid_len;
+
+    if (!out_ssid)
+        return -EINVAL;
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface)
+        return -EIO;
+
+    if (!NM_IS_DEVICE_WIFI(dev)) {
+        LOG_ERROR("Device %s is not a Wi-Fi device", iface);
+        return -EIO;
+    }
+
+    wifi_dev = NM_DEVICE_WIFI(dev);
+    ap = nm_device_wifi_get_active_access_point(wifi_dev);
+    if (!ap) {
+        LOG_TRACE("Device %s is not connected to any AP", iface);
+        return 0;
+    }
+
+    ssid = nm_access_point_get_ssid(ap);
+    if (!ssid) {
+        LOG_TRACE("Device %s active AP has no SSID", iface);
+        return 0;
+    }
+
+    ssid_data = g_bytes_get_data(ssid, &ssid_len);
+    ssid_str = nm_utils_ssid_to_utf8(ssid_data, ssid_len);
+    if (!ssid_str)
+        return -ENOMEM;
+
+    LOG_TRACE("Device [%s] connected to [%s], ssid length %zu",
+              iface, ssid_str, ssid_len);
+
+    g_strlcpy(out_ssid, ssid_str, NM_SSID_MAX_LEN);
+    g_free(ssid_str);
+
+    return 0;
+}
+
 int32_t enable_wifi_device(void)
 {
     int32_t ret;
     ctx_t *ctx;
+    char ssid[NM_SSID_MAX_LEN] = {0};
 
     ctx = get_ctx();
     if (!ctx)
         return -EIO;
 
     if (ctx->cfg.wifi_en) {
-        LOG_WARN("Wi-Fi already enabled");
+        LOG_TRACE("It looks like UI and System Manager "\
+                  "Wi-Fi state are mismatched");
+        ret = get_wifi_connected_ap_ssid(ssid);
+        if (!ret && ssid[0])
+            LOG_WARN("Wi-Fi interface already enabled, "\
+                     "connected to [%s]", ssid);
+        else
+            LOG_WARN("Wi-Fi interface already enabled "\
+                     "but not connected to any AP");
         return 0;
     }
 
@@ -353,6 +418,57 @@ int32_t request_wifi_rescan_access_point(void)
     g_main_context_invoke(g_main_ctx, scan_available_wifi_access_point, NULL);
     LOG_DEBUG("Wi-Fi rescan requested via main context");
 
+    return 0;
+}
+
+int32_t asdaget_wifi_connected_ap_ssid(char *out_ssid)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    const char *iface;
+    NMAccessPoint *ap;
+    GBytes *ssid;
+    char *ssid_str = NULL;
+    const guint8 *ssid_data;
+    gsize         ssid_len;
+
+    if (!out_ssid)
+        return -EINVAL;
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface)
+        return -EIO;
+
+    if (!NM_IS_DEVICE_WIFI(dev)) {
+        LOG_ERROR("Device %s is not a Wi-Fi device", iface);
+        return -EIO;
+    }
+
+    wifi_dev = NM_DEVICE_WIFI(dev);
+    ap = nm_device_wifi_get_active_access_point(wifi_dev);
+    if (!ap) {
+        LOG_TRACE("Device %s is not connected to any AP", iface);
+        return 0;
+    }
+
+    ssid = nm_access_point_get_ssid(ap);
+    if (ssid) {
+
+        ssid_data    = g_bytes_get_data(ssid, &ssid_len);
+        ssid_str     = nm_utils_ssid_to_utf8(ssid_data, ssid_len);
+        LOG_TRACE("Device %s connected to %s", iface, ssid_str);
+    } else {
+        LOG_TRACE("Device %s active AP has no SSID", iface);
+        return 0;
+    }
+
+    strncpy(out_ssid, ssid_str, sizeof(ssid_len));
     return 0;
 }
 
