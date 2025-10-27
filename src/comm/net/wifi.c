@@ -14,6 +14,8 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <string.h>
 #include <glib.h>
 #include <glib-object.h>
 #include <NetworkManager.h>
@@ -28,6 +30,18 @@
 /**********************
  *      TYPEDEFS
  **********************/
+typedef struct {
+    char ssid[NM_SSID_MAX_LEN];
+    char bssid[18];
+    uint32_t freq_mhz;
+    uint32_t bitrate_mbps;
+    uint32_t bandwidth_mhz;
+    uint8_t strength;
+    uint32_t wpa_flags;
+    uint32_t rsn_flags;
+    NM80211Mode mode;
+} ap_info_t;
+
 typedef struct {
     GMainLoop *loop;
     NMClient *client;
@@ -54,6 +68,48 @@ typedef struct {
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+static void print_nm_state(NMState state)
+{
+    const char *state_str;
+
+    switch (state) {
+    case NM_STATE_UNKNOWN:
+        state_str = "UNKNOWN";
+        break;
+    case NM_STATE_ASLEEP:
+        state_str = "ASLEEP";
+        break;
+    case NM_STATE_DISCONNECTED:
+        state_str = "DISCONNECTED";
+        break;
+    case NM_STATE_DISCONNECTING:
+        state_str = "DISCONNECTING";
+        break;
+    case NM_STATE_CONNECTING:
+        state_str = "CONNECTING";
+        break;
+    case NM_STATE_CONNECTED_LOCAL:
+        state_str = "CONNECTED_LOCAL";
+        break;
+    case NM_STATE_CONNECTED_SITE:
+        state_str = "CONNECTED_SITE";
+        break;
+    case NM_STATE_CONNECTED_GLOBAL:
+        state_str = "CONNECTED_GLOBAL";
+        break;
+    default:
+        state_str = "INVALID";
+        break;
+    }
+
+    if (state < NM_STATE_CONNECTING)
+        LOG_DEBUG("NetworkManager state: %s (%d)", state_str, state);
+    else if (state < NM_STATE_CONNECTED_GLOBAL)
+        LOG_TRACE("NetworkManager state: %s (%d)", state_str, state);
+    else
+        LOG_INFO("NetworkManager state: %s (%d)", state_str, state);
+}
+
 static NMDevice *find_nm_wifi_device(void)
 {
     NMClient *client;
@@ -197,18 +253,67 @@ static int32_t soft_control_wifi(gboolean enable)
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
-int32_t get_wifi_connected_ap_ssid(char *out_ssid)
+static int32_t get_ap_info_from_nm_ap(NMAccessPoint *ap, ap_info_t *info)
+{
+    GBytes *ssid_bytes;
+    const guint8 *ssid_data;
+    gsize ssid_len;
+    char *ssid_str;
+    const char *bssid;
+
+    if (!ap || !info)
+        return -EINVAL;
+
+    memset(info, 0, sizeof(*info));
+
+    LOG_TRACE("Extracting AP information...");
+
+    ssid_bytes = nm_access_point_get_ssid(ap);
+    if (!ssid_bytes) {
+        LOG_DEBUG("AP has no SSID data");
+        return -EIO;
+    }
+
+    ssid_data = g_bytes_get_data(ssid_bytes, &ssid_len);
+    ssid_str = nm_utils_ssid_to_utf8(ssid_data, ssid_len);
+    if (!ssid_str)
+        return -ENOMEM;
+
+    g_strlcpy(info->ssid, ssid_str, sizeof(info->ssid));
+    g_free(ssid_str);
+
+    bssid = nm_access_point_get_bssid(ap);
+    if (bssid)
+        g_strlcpy(info->bssid, bssid, sizeof(info->bssid));
+    else
+        info->bssid[0] = '\0';
+
+    info->freq_mhz = nm_access_point_get_frequency(ap);
+    info->bitrate_mbps = nm_access_point_get_max_bitrate(ap) / 1000;
+    info->bandwidth_mhz = nm_access_point_get_bandwidth(ap);
+    info->strength = nm_access_point_get_strength(ap);
+    info->wpa_flags = nm_access_point_get_wpa_flags(ap);
+    info->rsn_flags = nm_access_point_get_rsn_flags(ap);
+    info->mode = nm_access_point_get_mode(ap);
+
+    LOG_DEBUG("AP info: ssid=%s, bssid=%s, freq=%u MHz, bitrate=%u Mbit/s, "
+          "bandwidth=%u MHz, strength=%u%%, wpa_flags=0x%x, rsn_flags=0x%x, "
+          "mode=%d", info->ssid, info->bssid, info->freq_mhz,
+          info->bitrate_mbps, info->bandwidth_mhz, info->strength,
+          info->wpa_flags, info->rsn_flags, info->mode);
+
+    return 0;
+}
+
+int32_t get_wifi_connected_ap_info(ap_info_t *info)
 {
     NMDevice *dev;
     NMDeviceWifi *wifi_dev;
-    const char *iface;
     NMAccessPoint *ap;
-    GBytes *ssid;
-    const guint8 *ssid_data;
-    char *ssid_str;
-    gsize ssid_len;
+    const char *iface;
+    int32_t ret;
 
-    if (!out_ssid)
+    if (!info)
         return -EINVAL;
 
     dev = find_nm_wifi_device();
@@ -226,6 +331,8 @@ int32_t get_wifi_connected_ap_ssid(char *out_ssid)
         return -EIO;
     }
 
+    LOG_TRACE("Checking active AP on interface %s", iface);
+
     wifi_dev = NM_DEVICE_WIFI(dev);
     ap = nm_device_wifi_get_active_access_point(wifi_dev);
     if (!ap) {
@@ -233,22 +340,21 @@ int32_t get_wifi_connected_ap_ssid(char *out_ssid)
         return 0;
     }
 
-    ssid = nm_access_point_get_ssid(ap);
-    if (!ssid) {
-        LOG_TRACE("Device %s active AP has no SSID", iface);
-        return 0;
+    ret = get_ap_info_from_nm_ap(ap, info);
+    if (ret) {
+        LOG_ERROR("Failed to extract AP info from %s, ret=%d", iface, ret);
+        return ret;
     }
 
-    ssid_data = g_bytes_get_data(ssid, &ssid_len);
-    ssid_str = nm_utils_ssid_to_utf8(ssid_data, ssid_len);
-    if (!ssid_str)
-        return -ENOMEM;
+    LOG_TRACE("Device [%s] connected to [%s] (%s), %u MHz, %u Mbit/s, "
+          "strength=%u%%", iface, info->ssid, info->bssid,
+          info->freq_mhz, info->bitrate_mbps, info->strength);
 
-    LOG_TRACE("Device [%s] connected to [%s], ssid length %zu",
-              iface, ssid_str, ssid_len);
-
-    g_strlcpy(out_ssid, ssid_str, NM_SSID_MAX_LEN);
-    g_free(ssid_str);
+    LOG_DEBUG("Full AP info for %s: freq=%u MHz, bitrate=%u Mbit/s, "
+          "bandwidth=%u MHz, wpa_flags=0x%x, rsn_flags=0x%x, mode=%d",
+          info->ssid, info->freq_mhz, info->bitrate_mbps,
+          info->bandwidth_mhz, info->wpa_flags, info->rsn_flags,
+          info->mode);
 
     return 0;
 }
@@ -257,22 +363,35 @@ int32_t enable_wifi_device(void)
 {
     int32_t ret;
     ctx_t *ctx;
-    char ssid[NM_SSID_MAX_LEN] = {0};
+    ap_info_t ap_info;
+    NMState state;
+    NMClient *client;
 
     ctx = get_ctx();
     if (!ctx)
         return -EIO;
 
+    client = get_nm_client();
+    if (!client) {
+        LOG_ERROR("Failed to get NMClient");
+        return -EIO;
+    }
+
     if (ctx->cfg.wifi_en) {
-        LOG_TRACE("It looks like UI and System Manager "\
-                  "Wi-Fi state are mismatched");
-        ret = get_wifi_connected_ap_ssid(ssid);
-        if (!ret && ssid[0])
-            LOG_WARN("Wi-Fi interface already enabled, "\
-                     "connected to [%s]", ssid);
-        else
-            LOG_WARN("Wi-Fi interface already enabled "\
-                     "but not connected to any AP");
+        state = nm_client_get_state(client);
+        print_nm_state(state);
+
+        if (state >= NM_STATE_CONNECTED_LOCAL) {
+            ret = get_wifi_connected_ap_info(&ap_info);
+            if (!ret)
+                LOG_WARN("Wi-Fi interface already enabled, "\
+                     "connected to [%s - %d%%]", \
+                     ap_info.ssid, ap_info.strength);
+            else
+                LOG_TRACE("Wi-Fi already enabled but no active AP");
+        } else {
+            LOG_TRACE("Wi-Fi interface enabled but disconnected");
+        }
         return 0;
     }
 
@@ -283,6 +402,7 @@ int32_t enable_wifi_device(void)
     }
 
     ctx->cfg.wifi_en = true;
+    LOG_INFO("Wi-Fi successfully enabled");
     return 0;
 }
 
