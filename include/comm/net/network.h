@@ -15,12 +15,21 @@
  *      DEFINES
  *********************/
 #define NM_SSID_MAX_LEN                 33  /* IEEE 802.11 */
-#define WIFI_STATE_WAIT_TIMEOUT_MS      10000  /* 10 seconds */
-#define WIFI_STATE_POLL_INTERVAL_MS     200   /* 200ms */
 
 /**********************
  *      TYPEDEFS
  **********************/
+typedef struct {
+    char ssid[NM_SSID_MAX_LEN];
+    char bssid[18];
+    uint32_t freq_mhz;
+    uint32_t bitrate_mbps;
+    uint32_t bandwidth_mhz;
+    uint8_t strength;
+    uint32_t wpa_flags;
+    uint32_t rsn_flags;
+    NM80211Mode mode;
+} ap_info_t;
 
 /**********************
  *      MACROS
@@ -39,6 +48,11 @@ NMClient *get_nm_client();
 
 NMDevice * get_nm_dev_by_iface(const char *iface);
 int32_t disconnect_interface(const char *iface);
+
+const char *nm_state_to_str(NMState state);
+void print_nm_state(NMState state);
+const char *nm_device_type_str(NMDeviceType type);
+void handle_nm_state(NMClient *client, NMDevice *device);
 
 int32_t enable_wifi_device(void);
 int32_t disable_wifi_device(void);

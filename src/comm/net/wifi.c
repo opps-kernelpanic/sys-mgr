@@ -31,18 +31,6 @@
  *      TYPEDEFS
  **********************/
 typedef struct {
-    char ssid[NM_SSID_MAX_LEN];
-    char bssid[18];
-    uint32_t freq_mhz;
-    uint32_t bitrate_mbps;
-    uint32_t bandwidth_mhz;
-    uint8_t strength;
-    uint32_t wpa_flags;
-    uint32_t rsn_flags;
-    NM80211Mode mode;
-} ap_info_t;
-
-typedef struct {
     GMainLoop *loop;
     NMClient *client;
     NMDevice *device;
@@ -68,95 +56,6 @@ typedef struct {
 /**********************
  *   STATIC FUNCTIONS
  **********************/
-static void print_nm_state(NMState state)
-{
-    const char *state_str;
-
-    switch (state) {
-    case NM_STATE_UNKNOWN:
-        state_str = "UNKNOWN";
-        break;
-    case NM_STATE_ASLEEP:
-        state_str = "ASLEEP";
-        break;
-    case NM_STATE_DISCONNECTED:
-        state_str = "DISCONNECTED";
-        break;
-    case NM_STATE_DISCONNECTING:
-        state_str = "DISCONNECTING";
-        break;
-    case NM_STATE_CONNECTING:
-        state_str = "CONNECTING";
-        break;
-    case NM_STATE_CONNECTED_LOCAL:
-        state_str = "CONNECTED_LOCAL";
-        break;
-    case NM_STATE_CONNECTED_SITE:
-        state_str = "CONNECTED_SITE";
-        break;
-    case NM_STATE_CONNECTED_GLOBAL:
-        state_str = "CONNECTED_GLOBAL";
-        break;
-    default:
-        state_str = "INVALID";
-        break;
-    }
-
-    if (state < NM_STATE_CONNECTING)
-        LOG_DEBUG("NetworkManager state: %s (%d)", state_str, state);
-    else if (state < NM_STATE_CONNECTED_GLOBAL)
-        LOG_TRACE("NetworkManager state: %s (%d)", state_str, state);
-    else
-        LOG_INFO("NetworkManager state: %s (%d)", state_str, state);
-}
-
-static void handle_wifi_current_state(NMClient *client)
-{
-    int32_t ret;
-    ap_info_t ap_info;
-    NMState state;
-
-    if (!client)
-        return;
-
-    state = nm_client_get_state(client);
-    print_nm_state(state);
-
-    switch (state) {
-    case NM_STATE_CONNECTED_GLOBAL:
-        ret = get_wifi_connected_ap_info(&ap_info);
-        if (!ret)
-            LOG_WARN("Wi-Fi interface already enabled, "\
-                 "connected to [%s - %d%%]", \
-                 ap_info.ssid, ap_info.strength);
-        else
-            LOG_TRACE("Wi-Fi already enabled but no active AP");
-        break;
-
-    case NM_STATE_CONNECTED_SITE:
-        LOG_TRACE("Connected, but no Internet access " \
-                  "(connectivity check failed)");
-        break;
-
-    case NM_STATE_CONNECTED_LOCAL:
-        LOG_TRACE("Internet connectivity unavailable. Connected locally only");
-        break;
-
-    case NM_STATE_CONNECTING:
-        LOG_TRACE("Wi-Fi is connecting...");
-        break;
-
-    case NM_STATE_DISCONNECTED:
-    case NM_STATE_DISCONNECTING:
-        LOG_TRACE("Wi-Fi enabled but not connected to any AP");
-        break;
-
-    default:
-        LOG_TRACE("Wi-Fi in unknown or sleep state");
-        break;
-    }
-}
-
 static NMDevice *find_nm_wifi_device(void)
 {
     NMClient *client;
@@ -241,45 +140,12 @@ static int32_t scan_available_wifi_access_point(void)
     return 0;
 }
 
-static gboolean wait_for_nm_state_stable(NMClient *client)
-{
-    NMState state;
-    gint64 start_time, elapsed;
-
-    if (!client)
-        return false;
-
-    start_time = g_get_monotonic_time();
-
-    while (true) {
-        state = nm_client_get_state(client);
-
-        /* Considered stable when state >= CONNECTED_LOCAL or DISCONNECTED */
-        if (state >= NM_STATE_CONNECTED_LOCAL || \
-            state == NM_STATE_DISCONNECTED) {
-            print_nm_state(state);
-            return true;
-        }
-
-        g_usleep(WIFI_STATE_POLL_INTERVAL_MS * 1000);
-
-        elapsed = (g_get_monotonic_time() - start_time) / 1000;
-        if (elapsed > WIFI_STATE_WAIT_TIMEOUT_MS)
-            break;
-    }
-
-    LOG_WARN("Wi-Fi state did not stabilize within %d ms", \
-          WIFI_STATE_WAIT_TIMEOUT_MS);
-    print_nm_state(state);
-    return false;
-}
-
-static void wireless_state_changed_cb(GObject *object, GParamSpec *pspec, \
-                                      gpointer user_data)
+static void wireless_enable_state_changed_cb(GObject *object, \
+                                             GParamSpec *pspec, \
+                                             gpointer user_data)
 {
     gboolean enabled;
     NMClient *client;
-    gboolean stable;
 
     client = NM_CLIENT(object);
     if (!client)
@@ -287,13 +153,8 @@ static void wireless_state_changed_cb(GObject *object, GParamSpec *pspec, \
 
     g_object_get(client, "wireless-enabled", &enabled, NULL);
 
-    LOG_INFO("Wireless state changing: %s", enabled ? "enabled" : "disabled");
-
-    stable = wait_for_nm_state_stable(client);
-    if (stable)
-        LOG_INFO("Wi-Fi state stabilized successfully");
-    else
-        LOG_WARN("Wi-Fi state transition timeout");
+    // TODO: check device state
+    LOG_INFO("Wireless current state: %s", enabled ? "enabled" : "disabled");
 }
 
 /*
@@ -316,10 +177,10 @@ static int32_t soft_control_wifi(gboolean enable)
 
     /* Connect signal if not already connected */
     if (!g_signal_handler_find(client, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, \
-                   G_CALLBACK(wireless_state_changed_cb), NULL)) {
+                   G_CALLBACK(wireless_enable_state_changed_cb), NULL)) {
         // TODO: relocation to reduce cb available check
         g_signal_connect(client, "notify::wireless-enabled", \
-                 G_CALLBACK(wireless_state_changed_cb), NULL);
+                 G_CALLBACK(wireless_enable_state_changed_cb), NULL);
     }
 
     dev = find_nm_wifi_device();
@@ -387,12 +248,14 @@ static int32_t get_ap_info_from_nm_ap(NMAccessPoint *ap, ap_info_t *info)
     info->rsn_flags = nm_access_point_get_rsn_flags(ap);
     info->mode = nm_access_point_get_mode(ap);
 
-    LOG_DEBUG("AP info: \n\tssid=%s, \n\tbssid=%s, \n\tfreq=%u MHz, "\
+    LOG_TRACE("\nWi-Fi Access Point information: "\
+              "\n\tssid=%s, \n\tbssid=%s, \n\tfreq=%u MHz, "\
               "\n\tbitrate=%u Mbit/s, \n\tbandwidth=%u MHz, " \
-              "\n\tstrength=%u%%, \n\twpa_flags=0x%x, \n\trsn_flags=0x%x, "\
-              "\n\tmode=%d", info->ssid, info->bssid, info->freq_mhz,
-              info->bitrate_mbps, info->bandwidth_mhz, info->strength,
-              info->wpa_flags, info->rsn_flags, info->mode);
+              "\n\tstrength=%u%%, \n\twpa_flags=0x%x, "\
+              "\n\trsn_flags=0x%x, \n\tmode=%d", \
+              info->ssid, info->bssid, info->freq_mhz, info->bitrate_mbps, \
+              info->bandwidth_mhz, info->strength, info->wpa_flags, \
+              info->rsn_flags, info->mode);
 
     return 0;
 }
@@ -438,16 +301,9 @@ int32_t get_wifi_connected_ap_info(ap_info_t *info)
         return ret;
     }
 
-    LOG_TRACE("Device [%s] connected to [%s] (%s), %u MHz, %u Mbit/s, "
+    LOG_DEBUG("Device [%s] connected to [%s] (%s), %u MHz, %u Mbit/s, "
           "strength=%u%%", iface, info->ssid, info->bssid,
           info->freq_mhz, info->bitrate_mbps, info->strength);
-
-    LOG_DEBUG("Active AP info %s: \n\tfreq=%u MHz, \n\tbitrate=%u Mbit/s, " \
-              "\n\tbandwidth=%u MHz, \n\twpa_flags=0x%x, " \
-              "\n\trsn_flags=0x%x, \n\tmode=%d", \
-              info->ssid, info->freq_mhz, info->bitrate_mbps,
-              info->bandwidth_mhz, info->wpa_flags, info->rsn_flags,
-              info->mode);
 
     return 0;
 }
@@ -469,7 +325,12 @@ int32_t enable_wifi_device(void)
     }
 
     if (ctx->cfg.wifi_en) {
-        handle_wifi_current_state(client);
+        NMDevice *dev = find_nm_wifi_device();
+        if (!dev) {
+            LOG_ERROR("Wi-Fi device not found");
+            return -EIO;
+        }
+        handle_nm_state(client, dev);
         return 0;
     }
 
@@ -503,7 +364,12 @@ int32_t disable_wifi_device(void)
     }
 
     if (!ctx->cfg.wifi_en) {
-        handle_wifi_current_state(client);
+        NMDevice *dev = find_nm_wifi_device();
+        if (!dev) {
+            LOG_ERROR("Wi-Fi device not found");
+            return -EIO;
+        }
+        handle_nm_state(client, dev);
         return 0;
     }
 
