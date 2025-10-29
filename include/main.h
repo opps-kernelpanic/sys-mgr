@@ -42,7 +42,6 @@ typedef struct comm_handler {
 typedef struct conf_data {
     bool als_en;
     bool imu_en;
-    bool wifi_en;
 } conf_t;
 
 typedef struct ctx {

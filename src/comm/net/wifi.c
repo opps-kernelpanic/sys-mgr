@@ -310,14 +310,17 @@ int32_t get_wifi_connected_ap_info(ap_info_t *info)
 
 int32_t enable_wifi_device(void)
 {
+    gboolean enabled;
+    NMClient *client;
     int32_t ret;
-    ctx_t *ctx;
 
-    ctx = get_ctx();
-    if (!ctx)
+    client = get_nm_client();
+    if (!client)
         return -EIO;
 
-    if (ctx->cfg.wifi_en) {
+    g_object_get(client, "wireless-enabled", &enabled, NULL);
+
+    if (enabled) {
         NMDevice *dev = find_nm_wifi_device();
         if (!dev) {
             LOG_ERROR("Wi-Fi device not found");
@@ -333,7 +336,6 @@ int32_t enable_wifi_device(void)
         return ret;
     }
 
-    ctx->cfg.wifi_en = true;
     LOG_INFO("Wi-Fi successfully enabled");
 
     return 0;
@@ -341,14 +343,17 @@ int32_t enable_wifi_device(void)
 
 int32_t disable_wifi_device(void)
 {
+    gboolean enabled;
+    NMClient *client;
     int32_t ret;
-    ctx_t *ctx;
 
-    ctx = get_ctx();
-    if (!ctx)
+    client = get_nm_client();
+    if (!client)
         return -EIO;
 
-    if (!ctx->cfg.wifi_en) {
+    g_object_get(client, "wireless-enabled", &enabled, NULL);
+
+    if (!enabled) {
         NMDevice *dev = find_nm_wifi_device();
         if (!dev) {
             LOG_ERROR("Wi-Fi device not found");
@@ -364,7 +369,6 @@ int32_t disable_wifi_device(void)
         return ret;
     }
 
-    ctx->cfg.wifi_en = false;
     LOG_INFO("Wi-Fi successfully disabled");
 
     return 0;
