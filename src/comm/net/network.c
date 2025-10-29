@@ -6,7 +6,7 @@
 /*********************
  *      INCLUDES
  *********************/
-#define LOG_LEVEL LOG_LEVEL_TRACE
+// #define LOG_LEVEL LOG_LEVEL_TRACE
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
@@ -123,7 +123,6 @@ static void handle_wifi_device_state(NMDevice *device, NMDeviceState state)
     int32_t ret;
 
     LOG_DEBUG("[%s] wifi: %s", iface, nm_device_state_desc(state));
-    report_wifi_state();
 
     switch (state) {
     case NM_DEVICE_STATE_PREPARE:
@@ -147,7 +146,11 @@ static void handle_wifi_device_state(NMDevice *device, NMDeviceState state)
                  ap_info.ssid, ap_info.strength);
         else
             LOG_INFO("[%s] wifi: activated (no AP details)", iface);
+
         log_device_ip_info(device);
+        ret = report_wifi_state();
+        if (ret)
+            LOG_ERROR("Report Wi-Fi state failed, ret %d", ret);
         break;
     case NM_DEVICE_STATE_DEACTIVATING:
         break;

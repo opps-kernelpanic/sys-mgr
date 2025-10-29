@@ -148,6 +148,7 @@ static void wireless_enable_state_changed_cb(GObject *object, \
 {
     gboolean enabled;
     NMClient *client;
+    int32_t ret;
 
     client = NM_CLIENT(object);
     if (!client)
@@ -157,6 +158,9 @@ static void wireless_enable_state_changed_cb(GObject *object, \
 
     // TODO: check device state
     LOG_INFO("Wireless current state: %s", enabled ? "enabled" : "disabled");
+    ret = report_wifi_state();
+    if (ret)
+        LOG_ERROR("Report Wi-Fi state failed, ret %d", ret);
 }
 
 /*
@@ -518,6 +522,7 @@ int32_t report_wifi_state(void)
     }
 
     if (wifi_enabled) {
+        // TODO:
         static ap_info_t ap_info;
 
         ret = get_wifi_connected_ap_info(&ap_info);
