@@ -70,7 +70,7 @@ typedef enum {
     OP_WIFI_GET_AP_LIST,
     OP_WIFI_GET_AP_INFO,
     OP_WIFI_CONNECT_AP,
-    OP_WIFI_CONNECTION_STATE,
+    OP_WIFI_STATE,
 
     OP_ID_END,
 } opcode_t;

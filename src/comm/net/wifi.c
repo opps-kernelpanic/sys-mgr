@@ -20,6 +20,8 @@
 #include <glib-object.h>
 #include <NetworkManager.h>
 
+#include "comm/cmd_payload.h"
+#include "sched/workqueue.h"
 #include "comm/net/network.h"
 #include "main.h"
 
@@ -292,7 +294,7 @@ int32_t get_wifi_connected_ap_info(ap_info_t *info)
     ap = nm_device_wifi_get_active_access_point(wifi_dev);
     if (!ap) {
         LOG_TRACE("Device %s is not connected to any AP", iface);
-        return 0;
+        return -ENOTCONN;
     }
 
     ret = get_ap_info_from_nm_ap(ap, info);
@@ -483,6 +485,63 @@ int32_t request_wifi_rescan_access_point(void)
     LOG_DEBUG("Wi-Fi rescan requested via main context");
 
     return 0;
+}
+
+/*
+ * Report Wi-Fi state to remote side.
+ * Includes Wi-Fi enable flag and current connected access point info.
+ */
+int32_t report_wifi_state(void)
+{
+    remote_cmd_t *cmd;
+    gboolean wifi_enabled;
+    NMClient *client;
+    int32_t ret = 0;
+
+    client = get_nm_client();
+    if (!client)
+        return -EIO;
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                      OP_WIFI_STATE);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -ENOMEM;
+    }
+
+    g_object_get(client, "wireless-enabled", &wifi_enabled, NULL);
+
+    ret = remote_cmd_add_int(cmd, "wifi", wifi_enabled ? 1 : 0);
+    if (ret) {
+        LOG_ERROR("Add Wi-Fi state failed, ret %d", ret);
+        goto out_free;
+    }
+
+    if (wifi_enabled) {
+        static ap_info_t ap_info;
+
+        ret = get_wifi_connected_ap_info(&ap_info);
+        if (ret) {
+            LOG_INFO("wifi: activated (no AP details)");
+        } else {
+            LOG_INFO("wifi: activated -> AP [%s] (%u%%)", \
+                     ap_info.ssid, ap_info.strength);
+
+            ret = remote_cmd_add_int(cmd, ap_info.ssid, \
+                                     (int32_t)ap_info.strength);
+            if (ret) {
+                LOG_ERROR("Add active access point value failed, ret %d", ret);
+                goto out_free;
+            }
+        }
+    }
+
+    /* Command data will be released after the work completes */
+    return create_remote_task(WORK_PRIO_HIGH, cmd);
+
+out_free:
+    delete_remote_cmd(cmd);
+    return ret ? ret : -EIO;
 }
 
 int32_t asdaget_wifi_connected_ap_ssid(char *out_ssid)

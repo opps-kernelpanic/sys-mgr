@@ -123,6 +123,7 @@ static void handle_wifi_device_state(NMDevice *device, NMDeviceState state)
     int32_t ret;
 
     LOG_DEBUG("[%s] wifi: %s", iface, nm_device_state_desc(state));
+    report_wifi_state();
 
     switch (state) {
     case NM_DEVICE_STATE_PREPARE:
