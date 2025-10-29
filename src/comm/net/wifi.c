@@ -205,7 +205,7 @@ static int32_t soft_control_wifi(gboolean enable)
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
-static int32_t get_ap_info_from_nm_ap(NMAccessPoint *ap, ap_info_t *info)
+int32_t get_ap_info_from_nm_ap(NMAccessPoint *ap, ap_info_t *info)
 {
     GBytes *ssid_bytes;
     const guint8 *ssid_data;
@@ -312,17 +312,10 @@ int32_t enable_wifi_device(void)
 {
     int32_t ret;
     ctx_t *ctx;
-    NMClient *client;
 
     ctx = get_ctx();
     if (!ctx)
         return -EIO;
-
-    client = get_nm_client();
-    if (!client) {
-        LOG_ERROR("Failed to get NMClient");
-        return -EIO;
-    }
 
     if (ctx->cfg.wifi_en) {
         NMDevice *dev = find_nm_wifi_device();
@@ -330,7 +323,7 @@ int32_t enable_wifi_device(void)
             LOG_ERROR("Wi-Fi device not found");
             return -EIO;
         }
-        handle_nm_device_state(client, dev);
+        handle_nm_device_state(dev);
         return 0;
     }
 
@@ -350,18 +343,10 @@ int32_t disable_wifi_device(void)
 {
     int32_t ret;
     ctx_t *ctx;
-    NMClient *client;
-    NMState state;
 
     ctx = get_ctx();
     if (!ctx)
         return -EIO;
-
-    client = get_nm_client();
-    if (!client) {
-        LOG_ERROR("Failed to get NMClient");
-        return -EIO;
-    }
 
     if (!ctx->cfg.wifi_en) {
         NMDevice *dev = find_nm_wifi_device();
@@ -369,7 +354,7 @@ int32_t disable_wifi_device(void)
             LOG_ERROR("Wi-Fi device not found");
             return -EIO;
         }
-        handle_nm_device_state(client, dev);
+        handle_nm_device_state(dev);
         return 0;
     }
 
