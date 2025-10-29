@@ -42,16 +42,21 @@ typedef struct {
 /**********************
  *  GLOBAL PROTOTYPES
  **********************/
-int32_t init_network_manager_client();
-void deinit_network_manager_client();
 NMClient *get_nm_client();
-
-NMDevice * get_nm_dev_by_iface(const char *iface);
-int32_t disconnect_interface(const char *iface);
+void set_nm_client(NMClient *client);
 
 const char *nm_state_to_str(NMState state);
 void print_nm_state(NMState state);
+int32_t init_network_manager_client();
+void deinit_network_manager_client();
+int32_t disconnect_interface(const char *iface);
+NMDevice * get_nm_dev_by_iface(const char *iface);
+
 const char *nm_device_type_to_str(NMDeviceType type);
+const char *nm_device_state_to_str(NMDeviceState state);
+const char *nm_device_state_desc(NMDeviceState state);
+const char *nm_device_state_reason_to_str(NMDeviceStateReason reason);
+void log_device_ip_info(NMDevice *device);
 void handle_nm_device_state(NMDevice *device);
 
 int32_t enable_wifi_device(void);

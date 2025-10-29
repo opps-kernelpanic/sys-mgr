@@ -85,11 +85,11 @@ static void device_state_changed_cb(NMDevice *device,
     const char *iface;
 
     iface = nm_device_get_iface(device);
-    LOG_DEBUG("Device [%s] state changed: %s -> %s (reason: %d)",
+    LOG_DEBUG("[%s] state changed: %s -> %s \n\t(reason: %s)",
               iface,
-              nm_state_to_str(old_state),
-              nm_state_to_str(new_state),
-              reason);
+              nm_device_state_to_str(old_state),
+              nm_device_state_to_str(new_state),
+              nm_device_state_reason_to_str(reason));
 
     handle_nm_device_state(device);
 }
@@ -113,192 +113,6 @@ static int32_t init_nm_device_callback(NMClient *client)
     }
 
     return 0;
-}
-/**********************
- *   GLOBAL FUNCTIONS
- **********************/
-NMClient *get_nm_client()
-{
-    return (NMClient *)get_ctx()->comm.nm_client;
-}
-
-void set_nm_client( NMClient *client)
-{
-    // Mutex ?
-    get_ctx()->comm.nm_client = client;
-}
-
-const char *nm_state_to_str(NMState state)
-{
-    switch (state) {
-    case NM_STATE_UNKNOWN:
-        return "UNKNOWN";
-    case NM_STATE_ASLEEP:
-        return "ASLEEP";
-    case NM_STATE_DISCONNECTED:
-        return "DISCONNECTED";
-    case NM_STATE_DISCONNECTING:
-        return "DISCONNECTING";
-    case NM_STATE_CONNECTING:
-        return "CONNECTING";
-    case NM_STATE_CONNECTED_LOCAL:
-        return "CONNECTED_LOCAL";
-    case NM_STATE_CONNECTED_SITE:
-        return "CONNECTED_SITE";
-    case NM_STATE_CONNECTED_GLOBAL:
-        return "CONNECTED_GLOBAL";
-    default:
-        return "INVALID";
-    }
-}
-
-void print_nm_state(NMState state)
-{
-    const char *state_str = nm_state_to_str(state);
-
-    if (state < NM_STATE_CONNECTING)
-        LOG_DEBUG("NetworkManager state: %s (%d)", state_str, state);
-    else if (state < NM_STATE_CONNECTED_GLOBAL)
-        LOG_TRACE("NetworkManager state: %s (%d)", state_str, state);
-    else
-        LOG_INFO("NetworkManager state: %s (%d)", state_str, state);
-}
-
-const char *nm_device_type_to_str(NMDeviceType type)
-{
-    switch (type) {
-    case NM_DEVICE_TYPE_ETHERNET:
-        return "Ethernet";
-    case NM_DEVICE_TYPE_WIFI:
-        return "Wi-Fi";
-    case NM_DEVICE_TYPE_MODEM:
-        return "Cellular";
-    case NM_DEVICE_TYPE_BT:
-        return "Bluetooth";
-    case NM_DEVICE_TYPE_VLAN:
-        return "VLAN";
-    case NM_DEVICE_TYPE_BRIDGE:
-        return "Bridge";
-    case NM_DEVICE_TYPE_LOOPBACK:
-        return "Loopback";
-    default:
-        return "Unknown";
-    }
-}
-
-const char *nm_device_state_to_str(NMDeviceState state)
-{
-    switch (state) {
-    case NM_DEVICE_STATE_UNKNOWN:
-        return "NM_DEVICE_STATE_UNKNOWN";
-
-    case NM_DEVICE_STATE_UNMANAGED:
-        return "NM_DEVICE_STATE_UNMANAGED";
-
-    case NM_DEVICE_STATE_UNAVAILABLE:
-        return "NM_DEVICE_STATE_UNAVAILABLE";
-
-    case NM_DEVICE_STATE_DISCONNECTED:
-        return "NM_DEVICE_STATE_DISCONNECTED";
-
-    case NM_DEVICE_STATE_PREPARE:
-        return "NM_DEVICE_STATE_PREPARE";
-
-    case NM_DEVICE_STATE_CONFIG:
-        return "NM_DEVICE_STATE_CONFIG";
-
-    case NM_DEVICE_STATE_NEED_AUTH:
-        return "NM_DEVICE_STATE_NEED_AUTH";
-
-    case NM_DEVICE_STATE_IP_CONFIG:
-        return "NM_DEVICE_STATE_IP_CONFIG";
-
-    case NM_DEVICE_STATE_IP_CHECK:
-        return "NM_DEVICE_STATE_IP_CHECK";
-
-    case NM_DEVICE_STATE_SECONDARIES:
-        return "NM_DEVICE_STATE_SECONDARIES";
-
-    case NM_DEVICE_STATE_ACTIVATED:
-        return "NM_DEVICE_STATE_ACTIVATED";
-
-    case NM_DEVICE_STATE_DEACTIVATING:
-        return "NM_DEVICE_STATE_DEACTIVATING";
-
-    case NM_DEVICE_STATE_FAILED:
-        return "NM_DEVICE_STATE_FAILED";
-
-    default:
-        return "INVALID";
-    }
-}
-
-const char *nm_device_state_desc(NMDeviceState state)
-{
-    switch (state) {
-    case NM_DEVICE_STATE_UNKNOWN:
-        return "Device state unknown";
-    case NM_DEVICE_STATE_UNMANAGED:
-        return "Recognized but not managed by NM";
-    case NM_DEVICE_STATE_UNAVAILABLE:
-        return "Managed but unavailable (no carrier, firmware, etc)";
-    case NM_DEVICE_STATE_DISCONNECTED:
-        return "Idle, ready but not connected";
-    case NM_DEVICE_STATE_PREPARE:
-        return "Preparing connection (MAC, link, etc)";
-    case NM_DEVICE_STATE_CONFIG:
-        return "Connecting (associate/dial/etc)";
-    case NM_DEVICE_STATE_NEED_AUTH:
-        return "Waiting for credentials or secrets";
-    case NM_DEVICE_STATE_IP_CONFIG:
-        return "Requesting IP configuration";
-    case NM_DEVICE_STATE_IP_CHECK:
-        return "Checking connectivity (e.g. captive portal)";
-    case NM_DEVICE_STATE_SECONDARIES:
-        return "Waiting for secondary (VPN, etc)";
-    case NM_DEVICE_STATE_ACTIVATED:
-        return "Network connection established";
-    case NM_DEVICE_STATE_DEACTIVATING:
-        return "Disconnecting, cleaning resources";
-    case NM_DEVICE_STATE_FAILED:
-        return "Connection failed or aborted";
-    default:
-        return "Invalid or unknown state";
-    }
-}
-
-/* Log IPv4/IPv6 addresses if available */
-static void log_device_ip_info(NMDevice *device)
-{
-    const NMIPConfig *ip4;
-    const NMIPConfig *ip6;
-    const GPtrArray *addrs;
-    const NMIPAddress *ip;
-    char buf[64] = {0};
-
-    /* IPv4 */
-    ip4 = nm_device_get_ip4_config(device);
-    if (ip4) {
-        addrs = nm_ip_config_get_addresses(ip4);
-        if (addrs && addrs->len > 0) {
-            ip = g_ptr_array_index(addrs, 0);
-            snprintf(buf, sizeof(buf), "%s",
-                 nm_ip_address_get_address(ip));
-            LOG_TRACE("IPv4 address: %s", buf);
-        }
-    }
-
-    /* IPv6 (first address) */
-    ip6 = nm_device_get_ip6_config(device);
-    if (ip6) {
-        addrs = nm_ip_config_get_addresses(ip6);
-        if (addrs && addrs->len > 0) {
-            ip = g_ptr_array_index(addrs, 0);
-            snprintf(buf, sizeof(buf), "%s",
-                 nm_ip_address_get_address(ip));
-            LOG_TRACE("IPv6 address: %s", buf);
-        }
-    }
 }
 
 /* Wi-Fi specific handling */
@@ -470,6 +284,360 @@ static void handle_generic_device_state(NMDevice *device, NMDeviceState state)
     }
 }
 
+/**********************
+ *   GLOBAL FUNCTIONS
+ **********************/
+NMClient *get_nm_client()
+{
+    return (NMClient *)get_ctx()->comm.nm_client;
+}
+
+void set_nm_client(NMClient *client)
+{
+    // Mutex ?
+    get_ctx()->comm.nm_client = client;
+}
+
+const char *nm_state_to_str(NMState state)
+{
+    switch (state) {
+    case NM_STATE_UNKNOWN:
+        return "UNKNOWN";
+    case NM_STATE_ASLEEP:
+        return "ASLEEP";
+    case NM_STATE_DISCONNECTED:
+        return "DISCONNECTED";
+    case NM_STATE_DISCONNECTING:
+        return "DISCONNECTING";
+    case NM_STATE_CONNECTING:
+        return "CONNECTING";
+    case NM_STATE_CONNECTED_LOCAL:
+        return "CONNECTED_LOCAL";
+    case NM_STATE_CONNECTED_SITE:
+        return "CONNECTED_SITE";
+    case NM_STATE_CONNECTED_GLOBAL:
+        return "CONNECTED_GLOBAL";
+    default:
+        return "INVALID";
+    }
+}
+
+void print_nm_state(NMState state)
+{
+    const char *state_str = nm_state_to_str(state);
+
+    if (state < NM_STATE_CONNECTING)
+        LOG_DEBUG("NetworkManager state: %s (%d)", state_str, state);
+    else if (state < NM_STATE_CONNECTED_GLOBAL)
+        LOG_TRACE("NetworkManager state: %s (%d)", state_str, state);
+    else
+        LOG_INFO("NetworkManager state: %s (%d)", state_str, state);
+}
+
+const char *nm_device_type_to_str(NMDeviceType type)
+{
+    switch (type) {
+    case NM_DEVICE_TYPE_ETHERNET:
+        return "Ethernet";
+    case NM_DEVICE_TYPE_WIFI:
+        return "Wi-Fi";
+    case NM_DEVICE_TYPE_MODEM:
+        return "Cellular";
+    case NM_DEVICE_TYPE_BT:
+        return "Bluetooth";
+    case NM_DEVICE_TYPE_VLAN:
+        return "VLAN";
+    case NM_DEVICE_TYPE_BRIDGE:
+        return "Bridge";
+    case NM_DEVICE_TYPE_LOOPBACK:
+        return "Loopback";
+    default:
+        return "Unknown";
+    }
+}
+
+const char *nm_device_state_to_str(NMDeviceState state)
+{
+    switch (state) {
+    case NM_DEVICE_STATE_UNKNOWN:
+        return "NM_DEVICE_STATE_UNKNOWN";
+
+    case NM_DEVICE_STATE_UNMANAGED:
+        return "NM_DEVICE_STATE_UNMANAGED";
+
+    case NM_DEVICE_STATE_UNAVAILABLE:
+        return "NM_DEVICE_STATE_UNAVAILABLE";
+
+    case NM_DEVICE_STATE_DISCONNECTED:
+        return "NM_DEVICE_STATE_DISCONNECTED";
+
+    case NM_DEVICE_STATE_PREPARE:
+        return "NM_DEVICE_STATE_PREPARE";
+
+    case NM_DEVICE_STATE_CONFIG:
+        return "NM_DEVICE_STATE_CONFIG";
+
+    case NM_DEVICE_STATE_NEED_AUTH:
+        return "NM_DEVICE_STATE_NEED_AUTH";
+
+    case NM_DEVICE_STATE_IP_CONFIG:
+        return "NM_DEVICE_STATE_IP_CONFIG";
+
+    case NM_DEVICE_STATE_IP_CHECK:
+        return "NM_DEVICE_STATE_IP_CHECK";
+
+    case NM_DEVICE_STATE_SECONDARIES:
+        return "NM_DEVICE_STATE_SECONDARIES";
+
+    case NM_DEVICE_STATE_ACTIVATED:
+        return "NM_DEVICE_STATE_ACTIVATED";
+
+    case NM_DEVICE_STATE_DEACTIVATING:
+        return "NM_DEVICE_STATE_DEACTIVATING";
+
+    case NM_DEVICE_STATE_FAILED:
+        return "NM_DEVICE_STATE_FAILED";
+
+    default:
+        return "INVALID";
+    }
+}
+
+const char *nm_device_state_desc(NMDeviceState state)
+{
+    switch (state) {
+    case NM_DEVICE_STATE_UNKNOWN:
+        return "Device state unknown";
+    case NM_DEVICE_STATE_UNMANAGED:
+        return "Recognized but not managed by NM";
+    case NM_DEVICE_STATE_UNAVAILABLE:
+        return "Managed but unavailable (no carrier, firmware, etc)";
+    case NM_DEVICE_STATE_DISCONNECTED:
+        return "Idle, ready but not connected";
+    case NM_DEVICE_STATE_PREPARE:
+        return "Preparing connection (MAC, link, etc)";
+    case NM_DEVICE_STATE_CONFIG:
+        return "Connecting (associate/dial/etc)";
+    case NM_DEVICE_STATE_NEED_AUTH:
+        return "Waiting for credentials or secrets";
+    case NM_DEVICE_STATE_IP_CONFIG:
+        return "Requesting IP configuration";
+    case NM_DEVICE_STATE_IP_CHECK:
+        return "Checking connectivity (e.g. captive portal)";
+    case NM_DEVICE_STATE_SECONDARIES:
+        return "Waiting for secondary (VPN, etc)";
+    case NM_DEVICE_STATE_ACTIVATED:
+        return "Network connection established";
+    case NM_DEVICE_STATE_DEACTIVATING:
+        return "Disconnecting, cleaning resources";
+    case NM_DEVICE_STATE_FAILED:
+        return "Connection failed or aborted";
+    default:
+        return "Invalid or unknown state";
+    }
+}
+
+const char *nm_device_state_reason_to_str(NMDeviceStateReason reason)
+{
+	switch (reason) {
+	case NM_DEVICE_STATE_REASON_NONE:
+		return "No reason";
+	case NM_DEVICE_STATE_REASON_UNKNOWN:
+		return "Unknown error";
+	case NM_DEVICE_STATE_REASON_NOW_MANAGED:
+		return "Now managed";
+	case NM_DEVICE_STATE_REASON_NOW_UNMANAGED:
+		return "Now unmanaged";
+	case NM_DEVICE_STATE_REASON_CONFIG_FAILED:
+		return "Config failed";
+	case NM_DEVICE_STATE_REASON_IP_CONFIG_UNAVAILABLE:
+		return "IP unavailable";
+	case NM_DEVICE_STATE_REASON_IP_CONFIG_EXPIRED:
+		return "IP expired";
+	case NM_DEVICE_STATE_REASON_NO_SECRETS:
+		return "No secrets";
+	case NM_DEVICE_STATE_REASON_SUPPLICANT_DISCONNECT:
+		return "Supplicant disconnected";
+	case NM_DEVICE_STATE_REASON_SUPPLICANT_CONFIG_FAILED:
+		return "Supplicant config failed";
+	case NM_DEVICE_STATE_REASON_SUPPLICANT_FAILED:
+		return "Supplicant failed";
+	case NM_DEVICE_STATE_REASON_SUPPLICANT_TIMEOUT:
+		return "Supplicant timeout";
+	case NM_DEVICE_STATE_REASON_PPP_START_FAILED:
+		return "PPP start failed";
+	case NM_DEVICE_STATE_REASON_PPP_DISCONNECT:
+		return "PPP disconnected";
+	case NM_DEVICE_STATE_REASON_PPP_FAILED:
+		return "PPP failed";
+	case NM_DEVICE_STATE_REASON_DHCP_START_FAILED:
+		return "DHCP start failed";
+	case NM_DEVICE_STATE_REASON_DHCP_ERROR:
+		return "DHCP error";
+	case NM_DEVICE_STATE_REASON_DHCP_FAILED:
+		return "DHCP failed";
+	case NM_DEVICE_STATE_REASON_SHARED_START_FAILED:
+		return "Shared start failed";
+	case NM_DEVICE_STATE_REASON_SHARED_FAILED:
+		return "Shared failed";
+	case NM_DEVICE_STATE_REASON_AUTOIP_START_FAILED:
+		return "AutoIP start failed";
+	case NM_DEVICE_STATE_REASON_AUTOIP_ERROR:
+		return "AutoIP error";
+	case NM_DEVICE_STATE_REASON_AUTOIP_FAILED:
+		return "AutoIP failed";
+	case NM_DEVICE_STATE_REASON_MODEM_BUSY:
+		return "Modem busy";
+	case NM_DEVICE_STATE_REASON_MODEM_NO_DIAL_TONE:
+		return "No dial tone";
+	case NM_DEVICE_STATE_REASON_MODEM_NO_CARRIER:
+		return "No carrier";
+	case NM_DEVICE_STATE_REASON_MODEM_DIAL_TIMEOUT:
+		return "Dial timeout";
+	case NM_DEVICE_STATE_REASON_MODEM_DIAL_FAILED:
+		return "Dial failed";
+	case NM_DEVICE_STATE_REASON_MODEM_INIT_FAILED:
+		return "Modem init failed";
+	case NM_DEVICE_STATE_REASON_GSM_APN_FAILED:
+		return "APN failed";
+	case NM_DEVICE_STATE_REASON_GSM_REGISTRATION_NOT_SEARCHING:
+		return "Not searching";
+	case NM_DEVICE_STATE_REASON_GSM_REGISTRATION_DENIED:
+		return "Registration denied";
+	case NM_DEVICE_STATE_REASON_GSM_REGISTRATION_TIMEOUT:
+		return "Registration timeout";
+	case NM_DEVICE_STATE_REASON_GSM_REGISTRATION_FAILED:
+		return "Registration failed";
+	case NM_DEVICE_STATE_REASON_GSM_PIN_CHECK_FAILED:
+		return "PIN check failed";
+	case NM_DEVICE_STATE_REASON_FIRMWARE_MISSING:
+		return "Firmware missing";
+	case NM_DEVICE_STATE_REASON_REMOVED:
+		return "Device removed";
+	case NM_DEVICE_STATE_REASON_SLEEPING:
+		return "Sleeping";
+	case NM_DEVICE_STATE_REASON_CONNECTION_REMOVED:
+		return "Connection removed";
+	case NM_DEVICE_STATE_REASON_USER_REQUESTED:
+		return "User requested";
+	case NM_DEVICE_STATE_REASON_CARRIER:
+		return "Carrier change";
+	case NM_DEVICE_STATE_REASON_CONNECTION_ASSUMED:
+		return "Connection assumed";
+	case NM_DEVICE_STATE_REASON_SUPPLICANT_AVAILABLE:
+		return "Supplicant available";
+	case NM_DEVICE_STATE_REASON_MODEM_NOT_FOUND:
+		return "Modem not found";
+	case NM_DEVICE_STATE_REASON_BT_FAILED:
+		return "Bluetooth failed";
+	case NM_DEVICE_STATE_REASON_GSM_SIM_NOT_INSERTED:
+		return "SIM not inserted";
+	case NM_DEVICE_STATE_REASON_GSM_SIM_PIN_REQUIRED:
+		return "SIM PIN required";
+	case NM_DEVICE_STATE_REASON_GSM_SIM_PUK_REQUIRED:
+		return "SIM PUK required";
+	case NM_DEVICE_STATE_REASON_GSM_SIM_WRONG:
+		return "SIM wrong";
+	case NM_DEVICE_STATE_REASON_INFINIBAND_MODE:
+		return "InfiniBand unsupported";
+	case NM_DEVICE_STATE_REASON_DEPENDENCY_FAILED:
+		return "Dependency failed";
+	case NM_DEVICE_STATE_REASON_BR2684_FAILED:
+		return "BR2684 failed";
+	case NM_DEVICE_STATE_REASON_MODEM_MANAGER_UNAVAILABLE:
+		return "ModemManager unavailable";
+	case NM_DEVICE_STATE_REASON_SSID_NOT_FOUND:
+		return "SSID not found";
+	case NM_DEVICE_STATE_REASON_SECONDARY_CONNECTION_FAILED:
+		return "Secondary conn failed";
+	case NM_DEVICE_STATE_REASON_DCB_FCOE_FAILED:
+		return "DCB/FCoE failed";
+	case NM_DEVICE_STATE_REASON_TEAMD_CONTROL_FAILED:
+		return "teamd failed";
+	case NM_DEVICE_STATE_REASON_MODEM_FAILED:
+		return "Modem failed";
+	case NM_DEVICE_STATE_REASON_MODEM_AVAILABLE:
+		return "Modem available";
+	case NM_DEVICE_STATE_REASON_SIM_PIN_INCORRECT:
+		return "SIM PIN incorrect";
+	case NM_DEVICE_STATE_REASON_NEW_ACTIVATION:
+		return "New activation";
+	case NM_DEVICE_STATE_REASON_PARENT_CHANGED:
+		return "Parent changed";
+	case NM_DEVICE_STATE_REASON_PARENT_MANAGED_CHANGED:
+		return "Parent managed changed";
+	case NM_DEVICE_STATE_REASON_OVSDB_FAILED:
+		return "OVSDB failed";
+	case NM_DEVICE_STATE_REASON_IP_ADDRESS_DUPLICATE:
+		return "Duplicate IP";
+	case NM_DEVICE_STATE_REASON_IP_METHOD_UNSUPPORTED:
+		return "IP method unsupported";
+	case NM_DEVICE_STATE_REASON_SRIOV_CONFIGURATION_FAILED:
+		return "SR-IOV failed";
+	case NM_DEVICE_STATE_REASON_PEER_NOT_FOUND:
+		return "Peer not found";
+	case NM_DEVICE_STATE_REASON_DEVICE_HANDLER_FAILED:
+		return "Device handler failed";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_BY_DEFAULT:
+	// 	return "Unmanaged (default)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_EXTERNAL_DOWN:
+	// 	return "Unmanaged (external down)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_LINK_NOT_INIT:
+	// 	return "Unmanaged (link not init)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_QUITTING:
+	// 	return "Unmanaged (quitting)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_SLEEPING:
+	// 	return "Unmanaged (sleeping)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_USER_CONF:
+	// 	return "Unmanaged (conf)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_USER_EXPLICIT:
+	// 	return "Unmanaged (explicit)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_USER_SETTINGS:
+	// 	return "Unmanaged (settings)";
+	// case NM_DEVICE_STATE_REASON_UNMANAGED_USER_UDEV:
+	// 	return "Unmanaged (udev)";
+	default:
+		return "Unknown reason";
+	}
+}
+
+/* Log IPv4/IPv6 addresses if available */
+void log_device_ip_info(NMDevice *device)
+{
+    const NMIPConfig *ip4;
+    const NMIPConfig *ip6;
+    const GPtrArray *addrs;
+    const NMIPAddress *ip;
+    const char *iface;
+    char buf[64] = {0};
+
+
+    iface = nm_device_get_iface(device);
+    /* IPv4 */
+    ip4 = nm_device_get_ip4_config(device);
+    if (ip4) {
+        addrs = nm_ip_config_get_addresses(ip4);
+        if (addrs && addrs->len > 0) {
+            ip = g_ptr_array_index(addrs, 0);
+            snprintf(buf, sizeof(buf), "%s",
+                 nm_ip_address_get_address(ip));
+            LOG_INFO("%s: IPv4 address: %s", iface ? iface : "unknown", buf);
+        }
+    }
+
+    /* IPv6 (first address) */
+    ip6 = nm_device_get_ip6_config(device);
+    if (ip6) {
+        addrs = nm_ip_config_get_addresses(ip6);
+        if (addrs && addrs->len > 0) {
+            ip = g_ptr_array_index(addrs, 0);
+            snprintf(buf, sizeof(buf), "%s",
+                 nm_ip_address_get_address(ip));
+            LOG_INFO("%s: IPv6 address: %s", iface ? iface : "unknown", buf);
+        }
+    }
+}
+
 /*
  * Public entry: handle device state based on NMDevice internal state.
  * This function is exhaustive over NMDeviceState and delegates to
@@ -496,7 +664,7 @@ void handle_nm_device_state(NMDevice *device)
     type_str = nm_device_type_to_str(type);
     iface = nm_device_get_iface(device);
 
-    LOG_TRACE("[%s] \n\tdevice=%s \n\ttype=%s state=%s (%d) \n\t-> %s",
+    LOG_TRACE("[%s] device=%s \n\ttype=%s state=%s (%d) -> %s",
           iface ? iface : "unknown",
           nm_object_get_path(NM_OBJECT(device)),
           type_str ? type_str : "unknown",
