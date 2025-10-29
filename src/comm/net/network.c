@@ -76,6 +76,51 @@ static void network_state_changed_cb(GObject *object, GParamSpec *pspec, \
     print_nm_state(nm_client_get_state(client));
 }
 
+static void device_state_changed_cb(NMDevice *device,
+                                    NMDeviceState new_state,
+                                    NMDeviceState old_state,
+                                    NMDeviceStateReason reason,
+                                    gpointer user_data)
+{
+    const char *iface;
+    NMClient *client;
+
+    iface = nm_device_get_iface(device);
+    LOG_DEBUG("Device [%s] state changed: %s -> %s (reason: %d)",
+              iface,
+              nm_state_to_str(old_state),
+              nm_state_to_str(new_state),
+              reason);
+
+    client = get_nm_client();
+    if (!client) {
+        LOG_ERROR("Failed to get NMClient");
+        return;
+    }
+
+    handle_nm_device_state(client, device);
+}
+
+static int32_t init_nm_device_callback(NMClient *client)
+{
+    const GPtrArray *devices;
+
+    if (!client)
+        return -EINVAL;
+
+    devices = nm_client_get_devices(client);
+    if (!devices)
+        return -EIO;
+
+    for (int32_t i = 0; i < devices->len; i++) {
+        NMDevice *dev = g_ptr_array_index(devices, i);
+        // TODO: store and handle watch ID from signal connect
+        g_signal_connect(dev, "state-changed", \
+                         G_CALLBACK(device_state_changed_cb), NULL);
+    }
+
+    return 0;
+}
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
@@ -94,6 +139,7 @@ int32_t init_network_manager_client(void)
 {
     NMClient *client;
     g_autoptr(GError) error = NULL;
+    int32_t ret;
 
     client = nm_client_new(NULL, &error);
     if (!client) {
@@ -108,6 +154,12 @@ int32_t init_network_manager_client(void)
     }
 
     set_nm_client(client);
+
+    ret = init_nm_device_callback(client);
+    if (ret) {
+        LOG_WARN("Register device state change callback failed, ret %d", ret);
+    }
+
     LOG_INFO("NetworkManager client initialized");
     return 0;
 }
@@ -243,7 +295,7 @@ const char *nm_device_type_str(NMDeviceType type)
  * Generalized handler for any NM-managed network device.
  * Logs current state, type, name, and relevant details if available.
  */
-void handle_nm_state(NMClient *client, NMDevice *device)
+void handle_nm_device_state(NMClient *client, NMDevice *device)
 {
     NMState state;
     NMDeviceType type;

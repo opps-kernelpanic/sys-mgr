@@ -52,7 +52,7 @@ int32_t disconnect_interface(const char *iface);
 const char *nm_state_to_str(NMState state);
 void print_nm_state(NMState state);
 const char *nm_device_type_str(NMDeviceType type);
-void handle_nm_state(NMClient *client, NMDevice *device);
+void handle_nm_device_state(NMClient *client, NMDevice *device);
 
 int32_t enable_wifi_device(void);
 int32_t disable_wifi_device(void);

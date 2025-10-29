@@ -330,7 +330,7 @@ int32_t enable_wifi_device(void)
             LOG_ERROR("Wi-Fi device not found");
             return -EIO;
         }
-        handle_nm_state(client, dev);
+        handle_nm_device_state(client, dev);
         return 0;
     }
 
@@ -369,7 +369,7 @@ int32_t disable_wifi_device(void)
             LOG_ERROR("Wi-Fi device not found");
             return -EIO;
         }
-        handle_nm_state(client, dev);
+        handle_nm_device_state(client, dev);
         return 0;
     }
 
