@@ -155,6 +155,9 @@ static void handle_wifi_device_state(NMDevice *device, NMDeviceState state)
     case NM_DEVICE_STATE_DEACTIVATING:
         break;
     case NM_DEVICE_STATE_DISCONNECTED:
+        ret = report_wifi_state();
+        if (ret)
+            LOG_ERROR("Report Wi-Fi state failed, ret %d", ret);
         break;
     case NM_DEVICE_STATE_FAILED:
         LOG_ERROR("[%s] wifi: connection failed", iface);
