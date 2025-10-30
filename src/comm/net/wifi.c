@@ -50,6 +50,7 @@ typedef struct {
 /**********************
  *  STATIC VARIABLES
  **********************/
+static wifi_info_t wifi_state;
 
 /**********************
  *      MACROS
@@ -125,11 +126,6 @@ static int32_t scan_available_wifi_access_point(void)
 
     wifi_dev = NM_DEVICE_WIFI(dev);
 
-    // TODO: relocation this signal register
-    g_signal_connect(wifi_dev, "notify::" NM_DEVICE_WIFI_LAST_SCAN,
-                     G_CALLBACK(get_available_wifi_access_points),
-                                                            NULL);
-
     cancel = g_cancellable_new();
     nm_device_wifi_request_scan_async(wifi_dev, cancel, \
                       (GAsyncReadyCallback)scan_wifi_cb, \
@@ -142,12 +138,48 @@ static int32_t scan_available_wifi_access_point(void)
     return 0;
 }
 
+/* Handle connection of AP scan signal when Wi-Fi is enabled */
+static void connect_ap_scan_signal(NMDevice *dev)
+{
+    if (!dev)
+        return;
+
+    if (g_signal_handler_find(dev, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, \
+                              G_CALLBACK(report_cached_ap_list), NULL))
+        return;
+
+    g_signal_connect(dev, "notify::" NM_DEVICE_WIFI_LAST_SCAN, \
+                     G_CALLBACK(report_cached_ap_list), NULL);
+
+    LOG_TRACE("[%s] Connected AP scan signal", nm_device_get_iface(dev));
+}
+
+/* Handle disconnection of AP scan signal when Wi-Fi is disabled */
+static void disconnect_ap_scan_signal(NMDevice *dev)
+{
+    if (!dev)
+        return;
+
+    g_signal_handlers_disconnect_matched(dev, \
+                                         G_SIGNAL_MATCH_FUNC, \
+                                         0, 0, NULL, \
+                                         G_CALLBACK(report_cached_ap_list), \
+                                         NULL);
+
+    LOG_TRACE("[%s] Disconnected AP scan signal", nm_device_get_iface(dev));
+}
+
+/*
+ * Callback: wireless-enable property change
+ * Triggered whenever the Wi-Fi enable/disable state changes.
+ */
 static void wireless_enable_state_changed_cb(GObject *object, \
                                              GParamSpec *pspec, \
                                              gpointer user_data)
 {
     gboolean enabled;
     NMClient *client;
+    NMDevice *dev;
     int32_t ret;
 
     client = NM_CLIENT(object);
@@ -156,11 +188,20 @@ static void wireless_enable_state_changed_cb(GObject *object, \
 
     g_object_get(client, "wireless-enabled", &enabled, NULL);
 
-    // TODO: check device state
     LOG_INFO("Wireless current state: %s", enabled ? "enabled" : "disabled");
+
     ret = report_wifi_state();
     if (ret)
         LOG_ERROR("Report Wi-Fi state failed, ret %d", ret);
+
+    dev = find_nm_wifi_device();
+    if (!dev)
+        return;
+
+    if (enabled)
+        connect_ap_scan_signal(dev);
+    else
+        disconnect_ap_scan_signal(dev);
 }
 
 /*
@@ -410,12 +451,22 @@ int32_t disconnect_wifi_device(void)
     return 0;
 }
 
-int32_t get_available_wifi_access_points(void)
+/*
+ * Collect and report available Wi-Fi access points.
+ * Returns 0 on success, negative errno on failure.
+ */
+int32_t get_available_wifi_access_points(remote_cmd_t *cmd)
 {
     NMDevice *dev;
     NMDeviceWifi *wifi_dev;
     const GPtrArray *aps;
+    const char *iface;
     guint i;
+
+    if (!cmd) {
+        LOG_ERROR("Invalid command pointer");
+        return -EINVAL;
+    }
 
     dev = find_nm_wifi_device();
     if (!dev) {
@@ -423,48 +474,57 @@ int32_t get_available_wifi_access_points(void)
         return -EIO;
     }
 
+    iface = nm_device_get_iface(dev);
+    if (!iface) {
+        LOG_ERROR("Failed to get device interface");
+        return -EIO;
+    }
+
     wifi_dev = NM_DEVICE_WIFI(dev);
     aps = nm_device_wifi_get_access_points(wifi_dev);
-
     if (!aps || aps->len == 0) {
-        LOG_WARN("No access points found on %s", nm_device_get_iface(dev));
+        LOG_WARN("[%s] No access points found", iface);
         return 0;
     }
 
-    LOG_INFO("Device %s: found %u access points", nm_device_get_iface(dev),
-             aps->len);
+    LOG_INFO("[%s] Found %u access points", iface, aps->len);
 
-    for (i = 0; i < aps->len; i++) {
+    for (i = 0; i < aps->len && i < WIFI_MAX_AP_CACHE; i++) {
+        ap_info_t *info;
         NMAccessPoint *ap;
-        GBytes *ssid_bytes;
-        char *ssid_str;
-        int32_t strength;
-        int32_t freq;
-        int32_t bit_rate;
-        NM80211ApSecurityFlags sec_flags;
+        int32_t ret;
 
         ap = g_ptr_array_index(aps, i);
-        ssid_bytes = nm_access_point_get_ssid(ap);
-        if (!ssid_bytes)
+        info = &wifi_state.cached_ap[i];
+        memset(info, 0, sizeof(*info));
+
+        ret = get_ap_info_from_nm_ap(ap, info);
+        if (ret) {
+            LOG_WARN("[%s] Failed to extract AP info #%u, ret=%d",
+                 iface, i, ret);
             continue;
+        }
 
-        ssid_str = nm_utils_ssid_to_utf8(g_bytes_get_data(ssid_bytes, NULL),
-                                         g_bytes_get_size(ssid_bytes));
-        strength = nm_access_point_get_strength(ap);
-        sec_flags = nm_access_point_get_flags(ap);
-        freq = nm_access_point_get_frequency(ap);
-        bit_rate = nm_access_point_get_max_bitrate(ap);
+        LOG_DEBUG("[%s] AP #%u: %-30s | %4d MHz | %5d Mbit/s | %3d%% | WPA=0x%x",
+              iface, i,
+              info->ssid ? info->ssid : "<hidden>",
+              info->freq_mhz,
+              info->bitrate_mbps,
+              info->strength,
+              info->wpa_flags);
 
-        LOG_INFO("  SSID: %-30s - %4d MHz - %5d kbit/s - %3d%% - Flags: 0x%x",
-                 ssid_str ? ssid_str : "<hidden>",
-                 freq,
-                 bit_rate,
-                 strength,
-                 sec_flags);
-
-        g_free(ssid_str);
+        ret = remote_cmd_add_int(cmd, info->ssid, (int32_t)info->strength);
+        if (ret) {
+            LOG_ERROR("[%s] Failed to add AP \"%s\" (ret=%d)",
+                  iface,
+                  info->ssid ? info->ssid : "<hidden>",
+                  ret);
+            /* continue instead of aborting */
+            continue;
+        }
     }
 
+    LOG_TRACE("[%s] Access point enumeration completed", iface);
     return 0;
 }
 
@@ -547,6 +607,48 @@ int32_t report_wifi_state(void)
 out_free:
     delete_remote_cmd(cmd);
     return ret ? ret : -EIO;
+}
+
+int32_t report_cached_ap_list(void)
+{
+    remote_cmd_t *cmd;
+    NMClient *client;
+    gboolean wifi_enabled;
+    int32_t ret = 0;
+
+    client = get_nm_client();
+    if (!client)
+        return -EIO;
+
+    g_object_get(client, "wireless-enabled", &wifi_enabled, NULL);
+    if (!wifi_enabled) {
+        LOG_WARN("Wi-Fi is disabled");
+        return -EINVAL;
+    }
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                                  OP_WIFI_AP_LIST);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -ENOMEM;
+    }
+
+    ret = get_available_wifi_access_points(cmd);
+    if (ret < 0) {
+        LOG_ERROR("Failed to collect AP list, ret=%d", ret);
+        delete_remote_cmd(cmd);
+        return ret;
+    }
+
+    /* Command data will be released after the work completes */
+    ret = create_remote_task(WORK_PRIO_HIGH, cmd);
+    if (ret < 0) {
+        LOG_ERROR("Failed to schedule AP report task, ret=%d", ret);
+        delete_remote_cmd(cmd);
+        return ret;
+    }
+
+    return 0;
 }
 
 int32_t asdaget_wifi_connected_ap_ssid(char *out_ssid)

@@ -114,6 +114,9 @@ int32_t process_opcode(uint32_t opcode, void *data)
     case OP_WIFI_STATE:
         ret = report_wifi_state();
         break;
+    case OP_WIFI_AP_LIST:
+        ret = report_cached_ap_list();
+        break;
     default:
         LOG_ERROR("Opcode [%d] is invalid", opcode);
         break;

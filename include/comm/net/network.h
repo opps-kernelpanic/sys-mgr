@@ -11,11 +11,17 @@
  *********************/
 #include <NetworkManager.h>
 
+#include "comm/cmd_payload.h"
+
 /*********************
  *      DEFINES
  *********************/
 #define NM_SSID_MAX_LEN                 33  /* IEEE 802.11 */
 
+#ifndef MAX_ENTRIES
+#define MAX_ENTRIES                     32
+#endif
+#define WIFI_MAX_AP_CACHE               MAX_ENTRIES
 /**********************
  *      TYPEDEFS
  **********************/
@@ -30,6 +36,12 @@ typedef struct {
     uint32_t rsn_flags;
     NM80211Mode mode;
 } ap_info_t;
+
+typedef struct {
+    ap_info_t active_ap;
+    ap_info_t cached_ap[WIFI_MAX_AP_CACHE];
+    int8_t ap_count;
+} wifi_info_t;
 
 /**********************
  *      MACROS
@@ -62,7 +74,7 @@ void handle_nm_device_state(NMDevice *device);
 int32_t enable_wifi_device(void);
 int32_t disable_wifi_device(void);
 int32_t disconnect_wifi_device(void);
-int32_t get_available_wifi_access_points(void);
+int32_t get_available_wifi_access_points(remote_cmd_t *cmd);
 int32_t request_wifi_rescan_access_point(void);
 int32_t get_ap_info_from_nm_ap(NMAccessPoint *ap, ap_info_t *info);
 
@@ -71,5 +83,6 @@ int32_t wifi_connect_to_ssid(const char *iface, const char *ssid, \
                          const char *password);
 
 int32_t report_wifi_state(void);
+int32_t report_cached_ap_list(void);
 
 #endif /* G_NETWORK_H */
