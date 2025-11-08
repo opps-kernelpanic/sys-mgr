@@ -1,4 +1,3 @@
-
 /**
  * @file internal_comm.c
  *
@@ -11,7 +10,7 @@
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <unistd.h>
 #include <stdint.h>
@@ -20,7 +19,8 @@
 #include <string.h>
 #include <sys/eventfd.h>
 
-#include <comm/f_comm.h>
+#include "comm/f_comm.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -33,7 +33,6 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-int32_t event_fd = -1;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -89,9 +88,12 @@ int32_t event_get(int32_t evfd, uint64_t *out_val)
     return 0;
 }
 
-int32_t init_event_file(void)
+int32_t init_event_file(ctx_t *ctx)
 {
     int32_t fd;
+
+    if (!ctx)
+        return -EINVAL;
 
     fd = eventfd(0, EFD_NONBLOCK);
     if (fd == -1) {
@@ -100,24 +102,27 @@ int32_t init_event_file(void)
         return -errno;
     }
 
-    event_fd = fd;
+    ctx->comm.event = fd;
     return 0;
 }
 
-int32_t cleanup_event_file(void)
+int32_t cleanup_event_file(ctx_t *ctx)
 {
     int32_t ret;
 
-    if (event_fd == -1)
+    if (!ctx)
+        return -EINVAL;
+
+    if (ctx->comm.event == -1)
         return 0;
 
-    ret = close(event_fd);
+    ret = close(ctx->comm.event);
     if (ret == -1) {
         LOG_TRACE("cleanup_event_file failed: fd=%d, err=%d(%s)", \
-                  event_fd, errno, strerror(errno));
+                  ctx->comm.event, errno, strerror(errno));
         return -errno;
     }
 
-    event_fd = -1;
+    ctx->comm.event = -1;
     return 0;
 }

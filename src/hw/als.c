@@ -10,7 +10,7 @@
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -44,6 +44,8 @@
 /**********************
  *      MACROS
  **********************/
+#define clamp(val, min, max) \
+    ((val) < (min) ? (min) : ((val) > (max) ? (max) : (val)))
 
 /**********************
  *   STATIC FUNCTIONS
@@ -69,9 +71,12 @@ int32_t als_late_init(const char *sensor_name, char *dev_path, size_t path_len)
     }
 
     snprintf(f_path, sizeof(f_path), "%s/%s", dev_path, ALS_SAMPLE_TIME_CFG);
-    if (gf_fs_file_exists(f_path)) {
+    ret = fs_file_exists(f_path);
+    if (ret < 0) {
+        return ret;
+    } else {
         snprintf(w_value, sizeof(w_value), "%f", 0.1);
-        ret = gf_fs_write_file(f_path, w_value, sizeof(w_value));
+        ret = fs_write_file(f_path, w_value, sizeof(w_value));
         if (ret) {
             LOG_ERROR("ALS sample configure failed, ret %d", ret);
         } else {
@@ -83,7 +88,7 @@ int32_t als_late_init(const char *sensor_name, char *dev_path, size_t path_len)
     return 0;
 }
 
-int32_t als_read_illuminance(const char *dev_path)
+int32_t als_read_illuminance(const char *dev_path, int32_t *out_val)
 {
     char r_buff[10];
     char f_path[128];
@@ -96,15 +101,60 @@ int32_t als_read_illuminance(const char *dev_path)
     }
 
     snprintf(f_path, sizeof(f_path), "%s/%s", dev_path, ALS_VALUE);
-    if (gf_fs_file_exists(f_path)) {
-        ret = gf_fs_read_file(f_path, r_buff, sizeof(r_buff), &read_len);
+    ret = fs_file_exists(f_path);
+    if (ret < 0) {
+        return ret;
+    } else {
+        ret = fs_read_file(f_path, r_buff, sizeof(r_buff), &read_len);
         if (ret) {
             LOG_ERROR("ALS read failed, ret %d", ret);
         } else {
-
-            LOG_INFO("ALS current value %s, ret %d", r_buff, ret);
+            *out_val = atoi(r_buff);
+            LOG_TRACE("ALS current value %d, ret %d", *out_val, ret);
         }
     }
+
+    return 0;
+}
+
+int32_t handle_auto_brightness(const char *dev_path)
+{
+    int32_t ret;
+    int32_t lux, brightness, target;
+    const int32_t lux_max = 500;
+    const int32_t pct_min = 0, pct_max = 100;
+    const int32_t step_thresh = 5;
+
+    ret = als_read_illuminance(dev_path, &lux);
+    if (ret)
+        return ret;
+
+    /* Map illuminance (lux) to brightness percent */
+    target = (lux * pct_max) / lux_max;
+    target = clamp(target, pct_min, pct_max);
+
+    LOG_TRACE("ALS: %d lux -> target %d%%", lux, target);
+
+    ret = get_brightness(&brightness);
+    if (ret)
+        return ret;
+
+    /* Skip small variations to avoid flicker */
+    if (abs(target - brightness) < step_thresh)
+        return 0;
+
+    ret = report_backlight_state(true, target);
+    if (ret)
+        LOG_WARN("Report backlight target state failed, ret %d", ret);
+
+    /* Smoothly ramp to new brightness (500ms) */
+    ret = brightness_ramp(brightness, target, 500000);
+    if (ret)
+        return ret;
+
+    ret = report_backlight_state(false, 0);
+    if (ret)
+        LOG_WARN("Report backlight state failed, ret %d", ret);
 
     return 0;
 }

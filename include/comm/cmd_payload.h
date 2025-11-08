@@ -14,6 +14,7 @@
  *      DEFINES
  *********************/
 #define COMP_NAME                       "SYSTEM-MANAGER"
+#define COMP_ID                         02
 #define MAX_ENTRIES                     32
 
 /**********************
@@ -39,30 +40,38 @@ typedef enum {
     /* Common API */
     OP_PING,
     /* DBUS API*/
-    OP_START_DBUS,
     OP_DBUS_SENT_CMD,
-    OP_DBUS_SENT_CMD_DATA,
+
+    /* HARDWARE */
+    OP_START_HW_MON,
     /* Brightness API */
-    OP_BACKLIGHT_INIT,
-    OP_BACKLIGHT_DEINIT,
-    OP_GET_BRIGHTNESS,
-    OP_SET_BRIGHTNESS,
-    /* Network API */
-    OP_WIFI_RESCAN,
-    OP_WIFI_GET_AP_LIST,
-    OP_WIFI_GET_AP_INFO,
-    OP_WIFI_CONN_AP,
+    OP_ENA_ALS,
+    OP_DIS_ALS,
+    OP_ENA_BACKLIGHT,
+    OP_DIS_BACKLIGHT,
+    OP_BACKLIGHT_STATE,
+    OP_ADJUST_BRIGHTNESS,
     /* Vibrator API */
     OP_LEFT_VIBRATOR,
     OP_RIGHT_VIBRATOR,
     /* IMU API */
-    OP_START_IMU,
-    OP_STOP_IMU,
-    OP_READ_IMU,
+    OP_ENABLE_IMU,
+    OP_DISABLE_IMU,
+    OP_IMU_STATE,
     /* AUDIO API */
     OP_AUDIO_INIT,
     OP_AUDIO_RELEASE,
     OP_SOUND_PLAY,
+
+    /* Network API */
+    OP_WIFI_ENABLE,
+    OP_WIFI_DISABLE,
+    OP_WIFI_STATE,
+    OP_WIFI_AP_LIST,
+    OP_WIFI_GET_AP_INFO,
+    OP_WIFI_CONNECT_AP,
+
+    OP_ID_END,
 } opcode_t;
 
 
@@ -85,9 +94,9 @@ typedef struct {
 // Top-level data frame structure
 typedef struct {
     const char *component_id;    // Identifier of the sender
-    uint32_t umid;            // Topic ID
+    uint32_t umid;                // Message ID
     uint32_t opcode;              // Operation code
-    uint8_t flow;
+    uint8_t prio;
     uint8_t duration;
     uint32_t entry_count;         // Number of entries in the payload
     payload_t entries[MAX_ENTRIES]; // Payload entries
@@ -119,11 +128,17 @@ local_cmd_t *create_local_cmd();
 void delete_local_cmd(local_cmd_t *cmd);
 
 void remote_cmd_init(remote_cmd_t *cmd, const char *component_id, int32_t umid, \
-                     int32_t opcode, uint8_t flow, uint8_t duration);
+                     int32_t opcode, uint8_t priority, uint8_t duration);
 int32_t remote_cmd_add_string(remote_cmd_t *cmd, const char *key, \
               const char *value);
 int32_t remote_cmd_add_int(remote_cmd_t *cmd, const char *key, int32_t value);
 
+/* Task helpper */
+int32_t create_local_simple_task(uint8_t priority, uint8_t duration, uint32_t opcode);
+int32_t create_remote_task(uint8_t priority, void *data);
+remote_cmd_t *create_remote_task_data(uint8_t priority, uint8_t duration, \
+                                      uint32_t opcode);
+int32_t create_remote_simple_task(uint8_t priority, uint8_t duration, uint32_t opcode);
 /**********************
  *  STATIC VARIABLES
  **********************/

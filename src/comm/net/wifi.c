@@ -6,18 +6,24 @@
 /*********************
  *      INCLUDES
  *********************/
-// #define LOG_LEVEL LOG_LEVEL_TRACE
+#define LOG_LEVEL LOG_LEVEL_TRACE
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <stdio.h>
+#include <stdbool.h>
+#include <errno.h>
+#include <string.h>
 #include <glib.h>
 #include <glib-object.h>
 #include <NetworkManager.h>
 
-#include <comm/f_comm.h>
+#include "comm/cmd_payload.h"
+#include "sched/workqueue.h"
+#include "comm/net/network.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -44,6 +50,7 @@ typedef struct {
 /**********************
  *  STATIC VARIABLES
  **********************/
+static wifi_info_t wifi_state;
 
 /**********************
  *      MACROS
@@ -52,38 +59,647 @@ typedef struct {
 /**********************
  *   STATIC FUNCTIONS
  **********************/
+static NMDevice *find_nm_wifi_device(void)
+{
+    NMClient *client;
+    const GPtrArray *devs;
+    const char *tmp_iface;
+    NMDevice *net_dev;
+    guint i;
 
+    /* Get NetworkManager client and device list */
+    client = get_nm_client();
+    if (!client)
+        return NULL;
+
+    devs = nm_client_get_devices(client);
+    if (!devs)
+        return NULL;
+
+    for (i = 0; i < devs->len; ++i) {
+        net_dev = g_ptr_array_index(devs, i);
+        if (!net_dev)
+            continue;
+
+        tmp_iface = nm_device_get_iface(net_dev);
+        if (NM_DEVICE_TYPE_WIFI == nm_device_get_device_type(net_dev)) {
+            LOG_DEBUG("Expected Wi-Fi interface detected: %s", tmp_iface);
+            return net_dev;
+        }
+
+        LOG_TRACE("Other NM interface found: %s", tmp_iface);
+    }
+
+    return NULL;
+}
+
+static void scan_wifi_cb(GObject *source_obj, GAsyncResult *res, \
+                          gpointer user_data)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    g_autoptr(GError) error = NULL;
+
+    dev = NM_DEVICE(source_obj);
+    wifi_dev = NM_DEVICE_WIFI(dev);
+
+    if (!nm_device_wifi_request_scan_finish(wifi_dev, res, &error)) {
+        LOG_ERROR("Async Wi-Fi scan failed: %s", error->message);
+        return;
+    }
+
+    LOG_INFO("Interface %s: Wi-Fi scan completed successfully",
+             nm_device_get_iface(dev));
+}
+
+static int32_t scan_available_wifi_access_point(void)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    GCancellable *cancel;
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    wifi_dev = NM_DEVICE_WIFI(dev);
+
+    cancel = g_cancellable_new();
+    nm_device_wifi_request_scan_async(wifi_dev, cancel, \
+                      (GAsyncReadyCallback)scan_wifi_cb, \
+                      NULL);
+    g_object_unref(cancel);
+
+    LOG_INFO("Wi-Fi scan request sent for device %s",
+             nm_device_get_iface(dev));
+
+    return 0;
+}
+
+/* Handle connection of AP scan signal when Wi-Fi is enabled */
+static void connect_ap_scan_signal(NMDevice *dev)
+{
+    if (!dev)
+        return;
+
+    if (g_signal_handler_find(dev, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, \
+                              G_CALLBACK(report_cached_ap_list), NULL))
+        return;
+
+    g_signal_connect(dev, "notify::" NM_DEVICE_WIFI_LAST_SCAN, \
+                     G_CALLBACK(report_cached_ap_list), NULL);
+
+    LOG_TRACE("[%s] Connected AP scan signal", nm_device_get_iface(dev));
+}
+
+/* Handle disconnection of AP scan signal when Wi-Fi is disabled */
+static void disconnect_ap_scan_signal(NMDevice *dev)
+{
+    if (!dev)
+        return;
+
+    g_signal_handlers_disconnect_matched(dev, \
+                                         G_SIGNAL_MATCH_FUNC, \
+                                         0, 0, NULL, \
+                                         G_CALLBACK(report_cached_ap_list), \
+                                         NULL);
+
+    LOG_TRACE("[%s] Disconnected AP scan signal", nm_device_get_iface(dev));
+}
+
+/*
+ * Callback: wireless-enable property change
+ * Triggered whenever the Wi-Fi enable/disable state changes.
+ */
+static void wireless_enable_state_changed_cb(GObject *object, \
+                                             GParamSpec *pspec, \
+                                             gpointer user_data)
+{
+    gboolean enabled;
+    NMClient *client;
+    NMDevice *dev;
+    int32_t ret;
+
+    client = NM_CLIENT(object);
+    if (!client)
+        return;
+
+    g_object_get(client, "wireless-enabled", &enabled, NULL);
+
+    LOG_INFO("Wireless current state: %s", enabled ? "enabled" : "disabled");
+
+    ret = report_wifi_state();
+    if (ret)
+        LOG_ERROR("Report Wi-Fi state failed, ret %d", ret);
+
+    dev = find_nm_wifi_device();
+    if (!dev)
+        return;
+
+    if (enabled)
+        connect_ap_scan_signal(dev);
+    else
+        disconnect_ap_scan_signal(dev);
+}
+
+/*
+ * soft_control_wifi - Enable or disable Wi-Fi interface via NetworkManager
+ * @enable: TRUE to enable, FALSE to disable
+ *
+ * Returns: 0 on success, negative errno on failure.
+ */
+static int32_t soft_control_wifi(gboolean enable)
+{
+    NMClient *client;
+    NMDevice *dev;
+    const char *iface;
+
+    client = get_nm_client();
+    if (!client) {
+        LOG_ERROR("NMClient is NULL");
+        return -EIO;
+    }
+
+    /* Connect signal if not already connected */
+    if (!g_signal_handler_find(client, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, \
+                   G_CALLBACK(wireless_enable_state_changed_cb), NULL)) {
+        // TODO: relocation to reduce cb available check
+        g_signal_connect(client, "notify::wireless-enabled", \
+                 G_CALLBACK(wireless_enable_state_changed_cb), NULL);
+    }
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -ENODEV;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface) {
+        LOG_ERROR("Failed to get Wi-Fi interface name");
+        return -EINVAL;
+    }
+
+    LOG_DEBUG("%s Wi-Fi device: %s",
+         enable ? "Enabling" : "Disabling", iface);
+
+    g_object_set(client, "wireless-enabled", enable, NULL);
+
+    return 0;
+}
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+int32_t get_ap_info_from_nm_ap(NMAccessPoint *ap, ap_info_t *info)
+{
+    GBytes *ssid_bytes;
+    const guint8 *ssid_data;
+    gsize ssid_len;
+    char *ssid_str;
+    const char *bssid;
+
+    if (!ap || !info)
+        return -EINVAL;
+
+    memset(info, 0, sizeof(*info));
+
+    LOG_TRACE("Extracting AP information...");
+
+    ssid_bytes = nm_access_point_get_ssid(ap);
+    if (!ssid_bytes) {
+        LOG_DEBUG("AP has no SSID data");
+        return -EIO;
+    }
+
+    ssid_data = g_bytes_get_data(ssid_bytes, &ssid_len);
+    ssid_str = nm_utils_ssid_to_utf8(ssid_data, ssid_len);
+    if (!ssid_str)
+        return -ENOMEM;
+
+    g_strlcpy(info->ssid, ssid_str, sizeof(info->ssid));
+    g_free(ssid_str);
+
+    bssid = nm_access_point_get_bssid(ap);
+    if (bssid)
+        g_strlcpy(info->bssid, bssid, sizeof(info->bssid));
+    else
+        info->bssid[0] = '\0';
+
+    info->freq_mhz = nm_access_point_get_frequency(ap);
+    info->bitrate_mbps = nm_access_point_get_max_bitrate(ap) / 1000;
+    info->bandwidth_mhz = nm_access_point_get_bandwidth(ap);
+    info->strength = nm_access_point_get_strength(ap);
+    info->wpa_flags = nm_access_point_get_wpa_flags(ap);
+    info->rsn_flags = nm_access_point_get_rsn_flags(ap);
+    info->mode = nm_access_point_get_mode(ap);
+
+    LOG_TRACE("\nWi-Fi Access Point information: "\
+              "\n\tssid=%s, \n\tbssid=%s, \n\tfreq=%u MHz, "\
+              "\n\tbitrate=%u Mbit/s, \n\tbandwidth=%u MHz, " \
+              "\n\tstrength=%u%%, \n\twpa_flags=0x%x, "\
+              "\n\trsn_flags=0x%x, \n\tmode=%d", \
+              info->ssid, info->bssid, info->freq_mhz, info->bitrate_mbps, \
+              info->bandwidth_mhz, info->strength, info->wpa_flags, \
+              info->rsn_flags, info->mode);
+
+    return 0;
+}
+
+int32_t get_wifi_connected_ap_info(ap_info_t *info)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    NMAccessPoint *ap;
+    const char *iface;
+    int32_t ret;
+
+    if (!info)
+        return -EINVAL;
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface)
+        return -EIO;
+
+    if (!NM_IS_DEVICE_WIFI(dev)) {
+        LOG_ERROR("Device %s is not a Wi-Fi device", iface);
+        return -EIO;
+    }
+
+    LOG_TRACE("Checking active AP on interface %s", iface);
+
+    wifi_dev = NM_DEVICE_WIFI(dev);
+    ap = nm_device_wifi_get_active_access_point(wifi_dev);
+    if (!ap) {
+        LOG_TRACE("Device %s is not connected to any AP", iface);
+        return -ENOTCONN;
+    }
+
+    ret = get_ap_info_from_nm_ap(ap, info);
+    if (ret) {
+        LOG_ERROR("Failed to extract AP info from %s, ret=%d", iface, ret);
+        return ret;
+    }
+
+    LOG_DEBUG("Device [%s] connected to [%s] (%s), %u MHz, %u Mbit/s, "
+          "strength=%u%%", iface, info->ssid, info->bssid,
+          info->freq_mhz, info->bitrate_mbps, info->strength);
+
+    return 0;
+}
+
+int32_t enable_wifi_device(void)
+{
+    gboolean enabled;
+    NMClient *client;
+    int32_t ret;
+
+    client = get_nm_client();
+    if (!client)
+        return -EIO;
+
+    g_object_get(client, "wireless-enabled", &enabled, NULL);
+
+    if (enabled) {
+        NMDevice *dev = find_nm_wifi_device();
+        if (!dev) {
+            LOG_ERROR("Wi-Fi device not found");
+            return -EIO;
+        }
+        handle_nm_device_state(dev);
+        return 0;
+    }
+
+    ret = soft_control_wifi(true);
+    if (ret) {
+        LOG_ERROR("Enable Wi-Fi failed, ret=%d", ret);
+        return ret;
+    }
+
+    LOG_INFO("Wi-Fi successfully enabled");
+
+    return 0;
+}
+
+int32_t disable_wifi_device(void)
+{
+    gboolean enabled;
+    NMClient *client;
+    int32_t ret;
+
+    client = get_nm_client();
+    if (!client)
+        return -EIO;
+
+    g_object_get(client, "wireless-enabled", &enabled, NULL);
+
+    if (!enabled) {
+        NMDevice *dev = find_nm_wifi_device();
+        if (!dev) {
+            LOG_ERROR("Wi-Fi device not found");
+            return -EIO;
+        }
+        handle_nm_device_state(dev);
+        return 0;
+    }
+
+    ret = soft_control_wifi(false);
+    if (ret) {
+        LOG_ERROR("Disable Wi-Fi failed, ret=%d", ret);
+        return ret;
+    }
+
+    LOG_INFO("Wi-Fi successfully disabled");
+
+    return 0;
+}
+
 /**
  * Disconnect the given Wi-Fi device from any connected AP.
  */
-int32_t wifi_disconnect_device(const char *iface_name)
+int32_t disconnect_wifi_device(void)
 {
     NMDevice *dev;
+    const char *tmp_iface;
     GError *error = NULL;
+    GMainContext *g_main_ctx;
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = find_nm_wifi_device();
     if (!dev) {
-        LOG_ERROR("Device %s not found", iface_name);
-        return EXIT_FAILURE;
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
     }
+
+    tmp_iface = nm_device_get_iface(dev);
+    if (!tmp_iface)
+        return -EIO;
+
+    LOG_INFO("Disconnecting device %s...", tmp_iface);
+
+    g_main_ctx = get_ctx()->g_main.ctx;
+    if (!g_main_ctx)
+        return -EIO;
+    g_main_context_invoke(g_main_ctx, disconnect_interface, \
+                          (gpointer)tmp_iface);
+    return 0;
+}
+
+/*
+ * Collect and report available Wi-Fi access points.
+ * Returns 0 on success, negative errno on failure.
+ */
+int32_t get_available_wifi_access_points(remote_cmd_t *cmd)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    const GPtrArray *aps;
+    const char *iface;
+    guint i;
+
+    if (!cmd) {
+        LOG_ERROR("Invalid command pointer");
+        return -EINVAL;
+    }
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface) {
+        LOG_ERROR("Failed to get device interface");
+        return -EIO;
+    }
+
+    wifi_dev = NM_DEVICE_WIFI(dev);
+    aps = nm_device_wifi_get_access_points(wifi_dev);
+    if (!aps || aps->len == 0) {
+        LOG_WARN("[%s] No access points found", iface);
+        return 0;
+    }
+
+    LOG_INFO("[%s] Found %u access points", iface, aps->len);
+
+    for (i = 0; i < aps->len && i < WIFI_MAX_AP_CACHE; i++) {
+        ap_info_t *info;
+        NMAccessPoint *ap;
+        int32_t ret;
+
+        ap = g_ptr_array_index(aps, i);
+        info = &wifi_state.cached_ap[i];
+        memset(info, 0, sizeof(*info));
+
+        ret = get_ap_info_from_nm_ap(ap, info);
+        if (ret) {
+            LOG_WARN("[%s] Failed to extract AP info #%u, ret=%d",
+                 iface, i, ret);
+            continue;
+        }
+
+        LOG_DEBUG("[%s] AP #%u: %-30s | %4d MHz | %5d Mbit/s | %3d%% | WPA=0x%x",
+              iface, i,
+              info->ssid ? info->ssid : "<hidden>",
+              info->freq_mhz,
+              info->bitrate_mbps,
+              info->strength,
+              info->wpa_flags);
+
+        ret = remote_cmd_add_int(cmd, info->ssid, (int32_t)info->strength);
+        if (ret) {
+            LOG_ERROR("[%s] Failed to add AP \"%s\" (ret=%d)",
+                  iface,
+                  info->ssid ? info->ssid : "<hidden>",
+                  ret);
+            /* continue instead of aborting */
+            continue;
+        }
+    }
+
+    LOG_TRACE("[%s] Access point enumeration completed", iface);
+    return 0;
+}
+
+int32_t request_wifi_rescan_access_point(void)
+{
+    ctx_t *ctx;
+    GMainContext *g_main_ctx;
+
+    ctx = get_ctx();
+    if (!ctx) {
+        LOG_ERROR("Context is NULL");
+        return -EIO;
+    }
+
+    g_main_ctx = ctx->g_main.ctx;
+    if (!g_main_ctx) {
+        LOG_ERROR("GMainContext not available");
+        return -EIO;
+    }
+
+    g_main_context_invoke(g_main_ctx, scan_available_wifi_access_point, NULL);
+    LOG_DEBUG("Wi-Fi rescan requested via main context");
+
+    return 0;
+}
+
+/*
+ * Report Wi-Fi state to remote side.
+ * Includes Wi-Fi enable flag and current connected access point info.
+ */
+int32_t report_wifi_state(void)
+{
+    remote_cmd_t *cmd;
+    gboolean wifi_enabled;
+    NMClient *client;
+    int32_t ret = 0;
+
+    client = get_nm_client();
+    if (!client)
+        return -EIO;
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                      OP_WIFI_STATE);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -ENOMEM;
+    }
+
+    g_object_get(client, "wireless-enabled", &wifi_enabled, NULL);
+
+    ret = remote_cmd_add_int(cmd, "wifi", wifi_enabled ? 1 : 0);
+    if (ret) {
+        LOG_ERROR("Add Wi-Fi state failed, ret %d", ret);
+        goto out_free;
+    }
+
+    if (wifi_enabled) {
+        // TODO:
+        static ap_info_t ap_info;
+
+        ret = get_wifi_connected_ap_info(&ap_info);
+        if (ret) {
+            LOG_INFO("wifi: activated (no AP details)");
+        } else {
+            LOG_INFO("wifi: activated -> AP [%s] (%u%%)", \
+                     ap_info.ssid, ap_info.strength);
+
+            ret = remote_cmd_add_int(cmd, ap_info.ssid, \
+                                     (int32_t)ap_info.strength);
+            if (ret) {
+                LOG_ERROR("Add active access point value failed, ret %d", ret);
+                goto out_free;
+            }
+        }
+    }
+
+    /* Command data will be released after the work completes */
+    return create_remote_task(WORK_PRIO_HIGH, cmd);
+
+out_free:
+    delete_remote_cmd(cmd);
+    return ret ? ret : -EIO;
+}
+
+int32_t report_cached_ap_list(void)
+{
+    remote_cmd_t *cmd;
+    NMClient *client;
+    gboolean wifi_enabled;
+    int32_t ret = 0;
+
+    client = get_nm_client();
+    if (!client)
+        return -EIO;
+
+    g_object_get(client, "wireless-enabled", &wifi_enabled, NULL);
+    if (!wifi_enabled) {
+        LOG_WARN("Wi-Fi is disabled");
+        return -EINVAL;
+    }
+
+    cmd = create_remote_task_data(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, \
+                                  OP_WIFI_AP_LIST);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -ENOMEM;
+    }
+
+    ret = get_available_wifi_access_points(cmd);
+    if (ret < 0) {
+        LOG_ERROR("Failed to collect AP list, ret=%d", ret);
+        delete_remote_cmd(cmd);
+        return ret;
+    }
+
+    /* Command data will be released after the work completes */
+    ret = create_remote_task(WORK_PRIO_HIGH, cmd);
+    if (ret < 0) {
+        LOG_ERROR("Failed to schedule AP report task, ret=%d", ret);
+        delete_remote_cmd(cmd);
+        return ret;
+    }
+
+    return 0;
+}
+
+int32_t asdaget_wifi_connected_ap_ssid(char *out_ssid)
+{
+    NMDevice *dev;
+    NMDeviceWifi *wifi_dev;
+    const char *iface;
+    NMAccessPoint *ap;
+    GBytes *ssid;
+    char *ssid_str = NULL;
+    const guint8 *ssid_data;
+    gsize         ssid_len;
+
+    if (!out_ssid)
+        return -EINVAL;
+
+    dev = find_nm_wifi_device();
+    if (!dev) {
+        LOG_ERROR("Wi-Fi device not found");
+        return -EIO;
+    }
+
+    iface = nm_device_get_iface(dev);
+    if (!iface)
+        return -EIO;
 
     if (!NM_IS_DEVICE_WIFI(dev)) {
-        LOG_ERROR("Device %s is not a Wi-Fi device", iface_name);
-        return EXIT_FAILURE;
+        LOG_ERROR("Device %s is not a Wi-Fi device", iface);
+        return -EIO;
     }
 
-    LOG_INFO("Disconnecting device %s...", iface_name);
-    nm_device_disconnect(dev, NULL, &error);
-    if (error) {
-        LOG_ERROR("Disconnect failed: %s", error->message);
-        g_error_free(error);
-        return EXIT_FAILURE;
+    wifi_dev = NM_DEVICE_WIFI(dev);
+    ap = nm_device_wifi_get_active_access_point(wifi_dev);
+    if (!ap) {
+        LOG_TRACE("Device %s is not connected to any AP", iface);
+        return 0;
     }
 
-    return EXIT_SUCCESS;
+    ssid = nm_access_point_get_ssid(ap);
+    if (ssid) {
+
+        ssid_data    = g_bytes_get_data(ssid, &ssid_len);
+        ssid_str     = nm_utils_ssid_to_utf8(ssid_data, ssid_len);
+        LOG_TRACE("Device %s connected to %s", iface, ssid_str);
+    } else {
+        LOG_TRACE("Device %s active AP has no SSID", iface);
+        return 0;
+    }
+
+    strncpy(out_ssid, ssid_str, sizeof(ssid_len));
+    return 0;
 }
 
 /**
@@ -99,7 +715,7 @@ int32_t wifi_is_connected_to_ssid(const char *iface_name, const char *ssid)
     char *active_ssid_str;
     int32_t connected;
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = get_nm_dev_by_iface(iface_name);
     if (!dev) {
         LOG_ERROR("Device %s not found", iface_name);
         return -1;
@@ -138,57 +754,6 @@ int32_t wifi_is_connected_to_ssid(const char *iface_name, const char *ssid)
     g_free(active_ssid_str);
 
     return connected;
-}
-
-int32_t wifi_list_access_points(const char *iface_name)
-{
-    NMDevice *dev;
-    NMDeviceWifi *wifi_device;
-    const GPtrArray *aps;
-    NMAccessPoint *ap;
-    GBytes *ssid_bytes;
-    char *ssid_str;
-    guint i;
-    int32_t strength;
-    NM80211ApSecurityFlags sec_flags;
-
-    dev = g_nm_device_get_by_iface(iface_name);
-    if (!dev) {
-        LOG_ERROR("Device %s not found", iface_name);
-        return EXIT_FAILURE;
-    }
-
-    if (!NM_IS_DEVICE_WIFI(dev)) {
-        LOG_ERROR("Device %s is not a Wi-Fi device", iface_name);
-        return EXIT_FAILURE;
-    }
-
-    wifi_device = NM_DEVICE_WIFI(dev);
-    aps = nm_device_wifi_get_access_points(wifi_device);
-
-    LOG_INFO("Device %s: found %u access points", iface_name, aps->len);
-
-    for (i = 0; i < aps->len; i++) {
-        ap = g_ptr_array_index(aps, i);
-        GBytes *ssid_bytes = nm_access_point_get_ssid(ap);
-        if (!ssid_bytes)
-            continue;
-
-        ssid_str = nm_utils_ssid_to_utf8(g_bytes_get_data(ssid_bytes, NULL),
-                                         g_bytes_get_size(ssid_bytes));
-
-        strength = nm_access_point_get_strength(ap);
-        sec_flags = nm_access_point_get_flags(ap);
-
-        LOG_INFO("  SSID: %-30s Strength: %3d%% SecurityFlags: 0x%x",
-                 ssid_str ? ssid_str : "<hidden>",
-                 strength,
-                 sec_flags);
-
-        g_free(ssid_str);
-    }
-
-    return EXIT_SUCCESS;
 }
 
 NMAccessPoint *find_ap_on_wifi_device(NMDevice *device, \
@@ -509,7 +1074,7 @@ int32_t wifi_connect_to_ssid(const char *iface_name, const char *ssid,
         return EXIT_FAILURE;
     }
 
-    dev = g_nm_device_get_by_iface(iface_name);
+    dev = get_nm_dev_by_iface(iface_name);
     if (!dev) {
         LOG_ERROR("Device %s not found", iface_name);
         return EXIT_FAILURE;

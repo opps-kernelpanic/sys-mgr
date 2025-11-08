@@ -10,7 +10,7 @@
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,15 +19,16 @@
 #include <signal.h>
 #include <pthread.h>
 #include <errno.h>
+#include <glib.h>
 #include <sys/epoll.h>
 #include <dbus/dbus.h>
 
-#include <comm/dbus_comm.h>
-#include <comm/f_comm.h>
-#include <comm/net/network.h>
-#include <sched/workqueue.h>
-#include <sched/task.h>
-#include <audio/sound.h>
+#include "comm/dbus_comm.h"
+#include "comm/f_comm.h"
+#include "comm/net/network.h"
+#include "comm/cmd_payload.h"
+#include "sched/workqueue.h"
+#include "main.h"
 
 /*********************
  *      DEFINES
@@ -40,16 +41,16 @@
 /**********************
  *  GLOBAL VARIABLES
  **********************/
-extern int32_t event_fd;
-volatile sig_atomic_t g_run = 1;
 
 /**********************
  *  STATIC PROTOTYPES
  **********************/
+static void service_shutdown_flow();
 
 /**********************
  *  STATIC VARIABLES
  **********************/
+static ctx_t *runtime_ctx = NULL;
 
 /**********************
  *      MACROS
@@ -63,16 +64,14 @@ static void sig_handler(int32_t sig)
     switch (sig) {
         case SIGINT:
             LOG_WARN("[+] Received SIGINT (Ctrl+C). Exiting...");
-            g_run = 0;
-            event_set(event_fd, SIGINT);
-            workqueue_stop();
+            service_shutdown_flow();
             break;
         case SIGTERM:
             LOG_WARN("[+] Received SIGTERM. Shutdown...");
             exit(0);
         case SIGABRT:
             LOG_WARN("[+] Received SIGABRT. Exiting...");
-            event_set(event_fd, SIGABRT);
+            event_set(get_ctx()->comm.event, SIGABRT);
             break;
         default:
             LOG_WARN("[!] Received unidentified signal: %d", sig);
@@ -84,34 +83,273 @@ static int32_t setup_signal_handler()
 {
     if (signal(SIGINT, sig_handler) == SIG_ERR) {
         LOG_ERROR("Error registering signal SIGINT handler");
-        return -1;
+        return -EIO;
     }
 
     if (signal(SIGTERM, sig_handler) == SIG_ERR) {
         LOG_ERROR("Error registering signal SIGTERM handler");
-        return -1;
+        return -EIO;
     }
 
     if (signal(SIGABRT, sig_handler) == SIG_ERR) {
         LOG_ERROR("Error registering signal SIGABRT handler");
-        return -1;
+        return -EIO;
     }
 
     return 0;
 }
 
+static int32_t create_ctx(void)
+{
+    runtime_ctx = (ctx_t *)calloc(1, sizeof(ctx_t));
+    if (runtime_ctx == NULL) {
+        return -ENOMEM;
+    }
+
+    return 0;
+}
+
+static void destroy_ctx(void)
+{
+    free(runtime_ctx);
+    runtime_ctx = NULL;
+}
+
+ctx_t *get_ctx(void);
+
+static int32_t create_g_main_loop_ctx(void)
+{
+	ctx_t *ctx;
+	GMainContext *g_main_ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx)
+		return -EIO;
+
+	g_main_ctx = g_main_context_default();
+	if (!g_main_ctx) {
+		LOG_ERROR("Failed to get default GMainContext");
+		return -EIO;
+	}
+
+	g_main_loop = g_main_loop_new(g_main_ctx, FALSE);
+	if (!g_main_loop) {
+		LOG_ERROR("Failed to create GMainLoop");
+		return -EIO;
+	}
+
+	ctx->g_main.ctx = g_main_ctx;
+	ctx->g_main.loop = g_main_loop;
+
+	LOG_INFO("GMainLoop context created");
+	return 0;
+}
+
+static int32_t start_g_main_loop(void)
+{
+	ctx_t *ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx)
+		return -EIO;
+
+	g_main_loop = ctx->g_main.loop;
+	if (!g_main_loop) {
+		LOG_ERROR("GMainLoop does not exist");
+		return -EIO;
+	}
+
+	LOG_INFO("GMainLoop started");
+	g_main_loop_run(g_main_loop);
+	LOG_INFO("GMainLoop exited cleanly");
+
+	return 0;
+}
+
+static void stop_g_main_loop(void)
+{
+	ctx_t *ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx)
+		return;
+
+	g_main_loop = ctx->g_main.loop;
+	if (!g_main_loop)
+		return;
+
+	if (g_main_loop_is_running(g_main_loop)) {
+		LOG_INFO("Stopping GMainLoop...");
+		g_main_loop_quit(g_main_loop);
+		LOG_INFO("GMainLoop stopped");
+	}
+}
+
+
+static void destroy_g_main_loop_ctx(void)
+{
+	ctx_t *ctx;
+	GMainLoop *g_main_loop;
+
+	ctx = get_ctx();
+	if (!ctx) {
+		LOG_ERROR("Context is NULL");
+		return;
+	}
+
+	g_main_loop = ctx->g_main.loop;
+	if (!g_main_loop) {
+		LOG_INFO("GMainLoop already destroyed");
+		return;
+	}
+
+	if (g_main_loop_is_running(g_main_loop)) {
+		LOG_WARN("GMainLoop still running, forcing quit");
+		g_main_loop_quit(g_main_loop);
+	}
+
+	g_main_loop_unref(g_main_loop);
+	ctx->g_main.loop = NULL;
+
+	/* ctx->g_main.ctx is default, do not unref */
+	LOG_INFO("GMainLoop context destroyed");
+}
+
+static int32_t service_startup_flow(void)
+{
+    int32_t ret;
+    pthread_t dbus_handler;
+    ctx_t *ctx;
+
+    ctx = get_ctx();
+    if (!ctx) {
+        exit(-EIO);
+    } else {
+        ctx->run = 1;
+        ctx->comm.event = -1;
+    }
+
+    /* Prepare eventfd to notify epoll when communicating with threads */
+    ret = init_event_file(ctx);
+    if (ret) {
+        LOG_FATAL("Failed to initialize eventfd, ret=%d", ret);
+        goto exit_err;
+    }
+
+    ret = workqueue_init();
+    if (ret) {
+        LOG_FATAL("Failed to initialize workqueues, ret=%d", ret);
+        goto exit_event;
+    }
+
+    /* Create DBus listener thread */
+    ret = pthread_create(&dbus_handler, NULL, dbus_fn_thread_handler, NULL);
+    if (ret) {
+        LOG_FATAL("Failed to create DBus listener thread: %s", strerror(ret));
+        goto exit_workqueue;
+    }
+
+    ret = hw_monitor_init();
+    if (ret) {
+        LOG_FATAL("Failed to create hardware monitor thread: %s", strerror(ret));
+        goto exit_dbus;
+    }
+
+    ret = create_g_main_loop_ctx();
+    if (ret) {
+        LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
+        goto exit_hw_mon;
+    }
+
+    ret = init_network_manager_client();
+    if (ret) {
+        LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
+        goto exit_g_main_loop;
+    }
+
+
+    create_local_simple_task(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, OP_AUDIO_INIT);
+
+    LOG_INFO("System Manager initialization completed");
+    return 0;
+
+/* Cleanup sequence in case of failure */
+
+exit_g_main_loop:
+    destroy_g_main_loop_ctx();
+
+exit_hw_mon:
+    hw_monitor_deinit();
+
+exit_dbus:
+    event_set(get_ctx()->comm.event, SIGUSR1);
+
+exit_workqueue:
+    workqueue_deinit();
+
+exit_event:
+    cleanup_event_file(ctx);
+
+exit_err:
+    destroy_ctx();
+    return ret;
+}
+
+/**
+ * Gracefully shutdown the system services
+ *
+ * This function ensures all normal tasks are finished, then stops
+ * endless tasks and notifies system and DBus about shutdown.
+ */
+static void service_shutdown_flow(void)
+{
+    int32_t ret;
+    int32_t cnt;
+    ctx_t *ctx = get_ctx();
+
+
+    create_local_simple_task(WORK_PRIO_NORMAL, WORK_DURATION_SHORT, OP_AUDIO_RELEASE);
+
+    /* Wait until workqueue is fully drained */
+    cnt = workqueue_active_count(get_wq(SYSTEM_WQ));
+    while (cnt) {
+        LOG_TRACE("Waiting for workqueue to be free, remaining work %d", cnt);
+        usleep(100000);
+        cnt = workqueue_active_count(get_wq(SYSTEM_WQ));
+    }
+
+    deinit_network_manager_client();
+
+    stop_g_main_loop();
+    destroy_g_main_loop_ctx();
+
+    hw_monitor_deinit();
+
+    /* Stop background threads and notify shutdown */
+    get_ctx()->run = 0;
+
+    /* Notify DBus/system about shutdown */
+    event_set(get_ctx()->comm.event, SIGINT);
+
+    workqueue_deinit();
+
+    cleanup_event_file(ctx);
+
+    LOG_INFO("Service shutdown flow completed");
+}
+
 
 static int32_t main_loop()
 {
-    uint32_t cnt = 0;
-
     LOG_INFO("System manager service is running...");
-    while (g_run) {
+
+    start_g_main_loop();
+
+    while (get_ctx()->run) {
         usleep(200000);
-        if (++cnt == 20) {
-            cnt = 0;
-            is_task_handler_idle();
-        }
     };
 
     LOG_INFO("System manager service is exiting...");
@@ -121,63 +359,40 @@ static int32_t main_loop()
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+ctx_t *get_ctx(void)
+{
+    return runtime_ctx;
+}
+
 int32_t main(void)
 {
     pthread_t task_handler;
     int32_t ret = 0;
 
     LOG_INFO("|---------------------> SYSTEM MANAGER <----------------------|");
-    if (setup_signal_handler()) {
-        goto exit_error;
-    }
-
-    ret = pthread_create(&task_handler, NULL, main_task_handler, NULL);
+    ret = create_ctx();
     if (ret) {
-        LOG_FATAL("Failed to create worker thread: %s", strerror(ret));
-        goto exit_error;
+        LOG_FATAL("Unable to create application runtime context");
+        return ret;
     }
 
-    // Prepare eventfd to notify epoll when communicating with a thread
-    ret = init_event_file();
+    ret = setup_signal_handler();
     if (ret) {
-        LOG_FATAL("Failed to initialize eventfd");
-        goto exit_workqueue;
+        return ret;
     }
 
-    create_local_simple_task(NON_BLOCK, ENDLESS, OP_START_DBUS);
-    create_local_simple_task(NON_BLOCK, SHORT, OP_AUDIO_INIT);
-
-    ret = network_manager_comm_init();
+    ret = service_startup_flow();
     if (ret) {
-        LOG_FATAL("Failed to create network manager client: %s", strerror(ret));
-        goto exit_listener;
+        LOG_FATAL("System Manager init flow failed, ret=%d", ret);
+        return ret;
     }
 
-    // System manager's primary tasks are executed within a loop
     ret = main_loop();
     if (ret) {
-        goto exit_nm;
+        return ret;
     }
 
-    pthread_join(task_handler, NULL);
-    // TODO: release audio HW
-    snd_sys_release();
-    cleanup_event_file();
-
+    destroy_ctx();
     LOG_INFO("|-------------> All services stopped. Safe exit <-------------|");
     return 0;
-
-exit_nm:
-    network_manager_comm_deinit();
-
-exit_listener:
-    event_set(event_fd, SIGUSR1);
-
-exit_workqueue:
-    workqueue_stop();
-    pthread_join(task_handler, NULL);
-    cleanup_event_file();
-
-exit_error:
-    return -1;
 }

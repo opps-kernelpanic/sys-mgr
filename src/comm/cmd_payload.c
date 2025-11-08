@@ -10,15 +10,17 @@
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 
-#include <comm/dbus_comm.h>
-#include <comm/cmd_payload.h>
+#include "comm/dbus_comm.h"
+#include "comm/cmd_payload.h"
+#include "sched/workqueue.h"
 
 /*********************
  *      DEFINES
@@ -96,14 +98,14 @@ void delete_local_cmd(local_cmd_t *cmd)
 }
 
 void remote_cmd_init(remote_cmd_t *cmd, const char *component_id, int32_t umid, \
-                     int32_t opcode, uint8_t flow, uint8_t duration)
+                     int32_t opcode, uint8_t priority, uint8_t duration)
 {
     int32_t i;
 
     cmd->component_id = component_id;
     cmd->umid = umid;
     cmd->opcode = opcode;
-    cmd->flow = flow;
+    cmd->prio = priority;
     cmd->duration = duration;
     cmd->entry_count = 0;
 
@@ -145,3 +147,83 @@ int32_t remote_cmd_add_int(remote_cmd_t *cmd, const char *key, int32_t value)
     return 0;
 }
 
+/*
+ * Local task runs only in the task handler. Its behavior depends on the
+ * current state of the handler: it may run immediately after being pushed
+ * into the workqueue, or it may wait until the handler is free if a
+ * previous task is still blocking.
+ */
+int32_t create_local_simple_task(uint8_t priority, uint8_t duration, \
+                                 uint32_t opcode)
+{
+    work_t *work = create_work(WORK_TYPE_LOCAL, \
+                               priority, duration, opcode, NULL);
+    if (!work) {
+        LOG_ERROR("Failed to create work from cmd");
+        return -EINVAL;
+    }
+
+    push_work(get_wq(SYSTEM_WQ), work);
+
+    return 0;
+}
+
+/*
+ * Remote task is created locally and pushed into the workqueue like a
+ * local task. The difference is that it is processed on the target
+ * service (e.g. System Manager). It is not blocked in this service,
+ * because all required actions are sent as commands to another service
+ * via DBus.
+ */
+int32_t create_remote_task(uint8_t priority, void *data)
+{
+    work_t *work;
+
+    work = create_work(WORK_TYPE_REMOTE, priority, WORK_DURATION_SHORT, \
+                       OP_DBUS_SENT_CMD, data);
+    if (!work) {
+        LOG_ERROR("Failed to create work from cmd");
+        return -EINVAL;
+    }
+
+    push_work(get_wq(SYSTEM_WQ), work);
+
+    return 0;
+}
+
+remote_cmd_t *create_remote_task_data(uint8_t priority, uint8_t duration, \
+                                      uint32_t opcode)
+{
+    remote_cmd_t *cmd;
+
+    cmd = create_remote_cmd();
+    if (!cmd) {
+        return NULL;
+    }
+
+    remote_cmd_init(cmd, COMP_NAME, COMP_ID, opcode, priority, duration);
+
+    return cmd;
+}
+
+/*
+ * After a remote command is sent to another service, it is used to create
+ * a local task on that service. The command must contain specific data so
+ * the service knows what to do.
+ *
+ * Each remote command requires at least two steps:
+ * 1. Create the remote command data (defines the expected operation on target)
+ * 2. Create the local task containing that data
+ */
+int32_t create_remote_simple_task(uint8_t priority, uint8_t duration, uint32_t opcode)
+{
+    remote_cmd_t *cmd;
+
+    cmd = create_remote_task_data(priority, duration, opcode);
+    if (!cmd) {
+        LOG_ERROR("Failed to create remote command payload");
+        return -EINVAL;
+    }
+
+    return create_remote_task(WORK_PRIO_HIGH, (void *)cmd);
+}

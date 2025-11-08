@@ -10,15 +10,15 @@
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <dbus/dbus.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
-#include <comm/dbus_comm.h>
-#include <sched/task.h>
+#include "comm/dbus_comm.h"
 
 // Encode remote_cmd_t into an existing DBusMessage
 bool encode_data_frame(DBusMessage *msg, const remote_cmd_t *cmd)
@@ -146,7 +146,7 @@ void create_method_frame(remote_cmd_t *cmd)
 {
     cmd->component_id = "terminal-ui";
     cmd->umid = 1001;
-    cmd->opcode = OP_SET_BRIGHTNESS;
+    cmd->opcode = OP_ADJUST_BRIGHTNESS;
     cmd->entry_count = 2;
 
     cmd->entries[0].key = "backlight";
@@ -165,7 +165,7 @@ void create_signal_frame(remote_cmd_t *cmd)
 {
     cmd->component_id = "terminal-ui";
     cmd->umid = 1001;
-    cmd->opcode = OP_SET_BRIGHTNESS;
+    cmd->opcode = OP_ADJUST_BRIGHTNESS;
     cmd->entry_count = 2;
 
     cmd->entries[0].key = "backlight";

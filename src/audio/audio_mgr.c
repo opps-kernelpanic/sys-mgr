@@ -15,14 +15,14 @@
 #if defined(LOG_LEVEL)
 #warning "LOG_LEVEL defined locally will override the global setting in this file"
 #endif
-#include <log.h>
+#include "log.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 
-#include <audio/audio.h>
+#include "audio/audio.h"
 
 /*********************
  *      DEFINES

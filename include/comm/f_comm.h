@@ -12,6 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "main.h"
+
 /*********************
  *      DEFINES
  *********************/
@@ -37,15 +39,15 @@
 // internal comm
 int32_t event_set(int32_t evfd, uint64_t code);
 int32_t event_get(int32_t evfd, uint64_t *out_val);
-int32_t init_event_file();
-int32_t cleanup_event_file(void);
+int32_t init_event_file(ctx_t *ctx);
+int32_t cleanup_event_file(ctx_t *ctx);
 
 // fs_comm
-int32_t gf_fs_write_file(const char *path, const char *data, size_t len);
-int32_t gf_fs_append_file(const char *path, const char *data, size_t len);
-int gf_fs_read_file(const char *path, char *buf, size_t buf_len, \
-                    size_t *out_len);
-int32_t gf_fs_file_exists(const char *path);
+int32_t fs_write_file(const char *path, const char *data, size_t len);
+int32_t fs_append_file(const char *path, const char *data, size_t len);
+int32_t fs_read_file(const char *path, char *buf, size_t buf_len, \
+                     size_t *out_len);
+int32_t fs_file_exists(const char *path);
 
 int32_t find_device_path_by_name(const char *basepath, const char *fid, \
                                  const char *id_str, char *result_path, \

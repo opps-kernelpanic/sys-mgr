@@ -127,8 +127,11 @@ static inline const char* _log_timestamp() {
 
 #if LOG_LEVEL >= LOG_LEVEL_TRACE
 #define LOG_TRACE(fmt, ...) \
-    fprintf(stdout, COLOR_WHITE "[TRACE] [%s] [%s:%d:%s] \n\t" fmt COLOR_RESET "\n", \
-            _log_timestamp(), __FILE__, __LINE__, __func__, ##__VA_ARGS__) 
+    fprintf(stdout, COLOR_BLUE "[TRACE] [%s] [%s] " fmt COLOR_RESET "\n", \
+            _log_timestamp(), __func__, ##__VA_ARGS__)
+
+    // fprintf(stdout, COLOR_WHITE "[TRACE] [%s] [%s:%d:%s] \n\t" fmt COLOR_RESET "\n", \
+    //         _log_timestamp(), __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #else
 #define LOG_TRACE(fmt, ...)
 #endif

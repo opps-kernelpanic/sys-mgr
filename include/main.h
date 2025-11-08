@@ -1,15 +1,21 @@
 /**
- * @file task.h
+ * @file main.h
  *
  */
 
-#ifndef G_TASK_H
-#define G_TASK_H
+#ifndef G_MAIN_H
+#define G_MAIN_H
 /*********************
  *      INCLUDES
  *********************/
 #include <stdint.h>
 #include <stdbool.h>
+#include <signal.h>
+#include <dbus/dbus.h>
+#include <NetworkManager.h>
+
+#include "comm/net/network.h"
+#include "sched/workqueue.h"
 
 /*********************
  *      DEFINES
@@ -18,6 +24,34 @@
 /**********************
  *      TYPEDEFS
  **********************/
+typedef struct {
+    GMainLoop *loop;
+    GMainContext *ctx;
+} g_ctx_t;
+
+typedef struct op_handler {
+    struct list_head handler_lst;       /* List of registered opcode handlers */
+} op_t;
+
+typedef struct comm_handler {
+    DBusConnection *dbus_conn;
+    NMClient *nm_client;
+    int32_t event;
+} comm_t;
+
+typedef struct conf_data {
+    bool als_en;
+    bool imu_en;
+} conf_t;
+
+typedef struct ctx {
+    sig_atomic_t run;
+    wq_ctx_t *wqs;
+    g_ctx_t g_main;
+    op_t op;
+    comm_t comm;
+    conf_t cfg;
+} ctx_t;
 
 /**********************
  *  GLOBAL VARIABLES
@@ -30,21 +64,8 @@
 /**********************
  *  GLOBAL PROTOTYPES
  **********************/
-void normal_task_cnt_reset();
-void normal_task_cnt_inc();
-void normal_task_cnt_dec();
-int32_t normal_task_cnt_get();
-void endless_task_cnt_reset();
-void endless_task_cnt_inc();
-void endless_task_cnt_dec();
-int32_t endless_task_cnt_get();
-bool is_task_handler_idle();
-void * main_task_handler(void* arg);
-
-int32_t process_opcode_endless(uint32_t opcode, void *data);
+ctx_t *get_ctx(void);
 int32_t process_opcode(uint32_t opcode, void *data);
-int32_t create_local_simple_task(uint8_t flow, uint8_t duration, uint32_t opcode);
-int32_t create_remote_task(uint8_t flow, void *data);
 
 /**********************
  *  STATIC VARIABLES
@@ -62,4 +83,4 @@ int32_t create_remote_task(uint8_t flow, void *data);
  *   STATIC FUNCTIONS
  **********************/
 
-#endif /* G_TASK_H */
+#endif /* G_MAIN_H */

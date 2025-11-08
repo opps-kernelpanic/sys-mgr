@@ -70,8 +70,8 @@ struct imu_angles imu_get_angles(void);
 /* Runtime tuning (pass >0 to change parameter) */
 void imu_kalman_set_tuning(float q_angle, float q_bias, float r_measure);
 
-/* Running state */
-int32_t imu_kalman_is_running(void);
+/* Enable state */
+bool is_imu_enabled(void);
 
 /*
  * Low-level read: read sysfs raw -> apply scale and mount matrix and convert units.
@@ -81,8 +81,10 @@ int32_t imu_kalman_is_running(void);
 int32_t imu_kalman_read_raw(float *ax, float *ay, float *az,
             float *gx, float *gy, float *gz);
 
-int32_t imu_fn_thread_handler();
-void imu_fn_thread_stop(void);
+int32_t enable_imu_fn();
+void disable_imu_fn(void);
+
+int32_t update_imu_state(void);
 /**********************
  *      MACROS
  **********************/
